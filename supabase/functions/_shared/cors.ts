@@ -1,11 +1,11 @@
 const allowedOrigins = [
   'http://localhost:3001',
-  'http://localhost:3001',
+  'http://localhost:3002',
   'http://127.0.0.1:3001',
   'https://shop.anniepetars.com',
-  'http://shop.anniepetars.com',
   'https://anniepetars.com',
   'https://www.anniepetars.com',
+  'https://admin.anniepetars.com'
 ]
 export function getCorsHeaders(req: Request): Record<string,string> {
   const origin=req.headers.get('origin') || ''
