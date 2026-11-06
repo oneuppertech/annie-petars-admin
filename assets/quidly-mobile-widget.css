@@ -1,0 +1,68 @@
+
+/* Quidly payment widget: frontend-only mobile adjustments */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#quidly-overlay-root {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  height: 100dvh !important;
+  z-index: 2147483647 !important;
+}
+
+#quidly-pay-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100vw !important;
+  height: 100% !important;
+  height: 100dvh !important;
+  padding: 12px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+#quidly-pay-modal,
+#quidly-pay-modal * {
+  box-sizing: border-box;
+}
+
+@media screen and (max-width: 600px) {
+  #quidly-pay-modal {
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 12px !important;
+  }
+
+  #quidly-pay-modal > * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  #quidly-pay-modal input,
+  #quidly-pay-modal select,
+  #quidly-pay-modal textarea {
+    max-width: 100% !important;
+    font-size: 16px !important;
+  }
+
+  #quidly-pay-modal img {
+    max-width: 100% !important;
+    height: auto;
+  }
+
+  #quidly-pay-modal button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
