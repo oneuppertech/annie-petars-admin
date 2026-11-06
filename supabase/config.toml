@@ -1,0 +1,18 @@
+project_id = "anniepetars-shop"
+
+[functions.catalog-public]
+verify_jwt = false
+[functions.newsletter-subscribe]
+verify_jwt = false
+[functions.contact-submit]
+verify_jwt = false
+[functions.custom-request]
+verify_jwt = false
+[functions.admin-dashboard]
+verify_jwt = true
+[functions.admin-products]
+verify_jwt = true
+[functions.admin-orders]
+verify_jwt = true
+[functions.admin-custom-requests]
+verify_jwt = true

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    
+<script>
+  (function () {
+    var search = window.location.search;
+
+    if (search.startsWith('?/')) {
+      var route = search
+        .slice(2)
+        .replace(/~and~/g, '&');
+
+      window.history.replaceState(
+        null,
+        '',
+        '/' + route + window.location.hash
+      );
+    }
+  })();
+</script>
+
+
+    <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Sora:wght@100..800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="/src/assets/annie-peters-logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Annie Peters</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

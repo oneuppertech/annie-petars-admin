@@ -1,0 +1,1 @@
+Shared code is imported by each Edge Function. Keep service-role credentials server-side only. Public form endpoints should be protected with rate limiting/CAPTCHA before production.
