@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted, inject } from 'vue'
 import { inventoryApi, errMsg, formatNaira } from '@/services/inventory'
 import ProductEditor from './ProductEditor.vue'
+import { Search } from '@element-plus/icons-vue'
 
 const props = defineProps({ collections: { type: Array, default: () => [] } })
 const emit = defineEmits(['changed'])
@@ -63,13 +64,47 @@ const statusColor = { active: 'success', draft: 'warning', archived: 'grey' }
 <template>
   <div>
     <div class="mb-4 flex flex-wrap items-center gap-3">
-      <v-text-field v-model="q" label="Search name or SKU" prepend-inner-icon="mdi-magnify"
-        density="compact" variant="outlined" hide-details clearable class="max-w-xs" />
-      <v-select v-model="status" :items="[{title:'All statuses',value:''},{title:'Active',value:'active'},{title:'Draft',value:'draft'},{title:'Archived',value:'archived'}]"
-        density="compact" variant="outlined" hide-details class="max-w-[11rem]" />
-      <v-select v-model="collectionId"
-        :items="[{title:'All collections',value:''},{title:'Uncategorised',value:'none'},...props.collections.map(c=>({title:c.name,value:c.id}))]"
-        density="compact" variant="outlined" hide-details class="max-w-[16rem]" />
+     <el-input
+  v-model="q"
+  placeholder="Search name or SKU"
+  clearable
+  class="max-w-xs"
+>
+  <template #prefix>
+    <el-icon>
+      <Search />
+    </el-icon>
+  </template>
+</el-input>
+
+<el-select
+  v-model="status"
+  placeholder="All statuses"
+  class="max-w-[11rem]"
+  clearable
+>
+  <el-option label="All statuses" value="" />
+  <el-option label="Active" value="active" />
+  <el-option label="Draft" value="draft" />
+  <el-option label="Archived" value="archived" />
+</el-select>
+
+<el-select
+  v-model="collectionId"
+  placeholder="All collections"
+  class="max-w-[16rem]"
+  clearable
+>
+  <el-option label="All collections" value="" />
+  <el-option label="Uncategorised" value="none" />
+
+  <el-option
+    v-for="collection in props.collections"
+    :key="collection.id"
+    :label="collection.name"
+    :value="collection.id"
+  />
+</el-select>
       <v-spacer />
       <v-menu v-if="selected.length">
         <template #activator="{ props: p }">

@@ -28,13 +28,12 @@ onMounted(loadCollections)
 <template>
   <MainLayout>
        <div class="mx-auto p-4 md:p-6">
-    <h1 class="mb-4 text-2xl font-semibold">Inventory</h1>
 
-    <v-tabs v-model="tab" color="primary" class="mb-6">
-      <v-tab value="products">Products</v-tab>
-      <v-tab value="collections">Collections</v-tab>
-      <v-tab value="stock">Stock alerts</v-tab>
-    </v-tabs>
+    <v-tabs v-model="tab" class="peach-tabs mb-6">
+  <v-tab value="products">Products</v-tab>
+  <v-tab value="collections">Collections</v-tab>
+  <v-tab value="stock">Stock alerts</v-tab>
+</v-tabs>
 
     <ProductsPanel v-if="tab === 'products'" :collections="collections" @changed="loadCollections" />
     <CollectionsPanel v-else-if="tab === 'collections'" :collections="collections" @changed="loadCollections" />
@@ -45,3 +44,33 @@ onMounted(loadCollections)
   </MainLayout>
  
 </template>
+
+<style scoped>
+.peach-tabs {
+  --v-tabs-height: 46px;
+}
+
+.peach-tabs :deep(.v-tab) {
+  color: #9A7567;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: all 0.2s ease;
+}
+
+.peach-tabs :deep(.v-tab:hover) {
+  color: #E2784A;
+  background: #FFF7F1;
+}
+
+.peach-tabs :deep(.v-tab--selected) {
+  color: #C4623A !important;
+  font-weight: 600;
+}
+
+.peach-tabs :deep(.v-tab__slider) {
+  background: #E2784A !important;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+}
+</style>
