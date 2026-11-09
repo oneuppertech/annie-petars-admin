@@ -5,6 +5,8 @@ import AOS from 'aos'
 import 'aos/dist/aos.css'
 import ApiService from '@/services/api' // <- adjust to your api service path
 import MainLayout from '@/layouts/MainLayout.vue'
+import VueApexCharts from 'vue3-apexcharts'
+const apexchart = VueApexCharts
 
 /* ------------------------------------------------------------------ */
 /* Config                                                              */
@@ -14,8 +16,8 @@ const REFRESH_MS = 60_000
 
 // Adjust to your router
 const ROUTES = {
-  orders: '/orders',
-  order: (id: string) => `/orders/${id}`,
+  orders: '/admin/orders',
+  order: (id: string) => `admin/orders/${id}`,
   inventory: '/admin/inventory',
   customRequests: '/custom-requests',
   messages: '/messages'
@@ -425,6 +427,87 @@ onBeforeUnmount(() => {
   if (clock) clearInterval(clock)
   Object.values(raf).forEach(cancelAnimationFrame)
 })
+const chartSeries = computed(() => [
+  {
+    name: 'Revenue',
+    data: series.value.map((s) => ({ x: s.date, y: s.revenue_kobo / 100 }))
+  }
+])
+
+const chartOptions = computed(() => ({
+  chart: {
+    type: 'area',
+    height: 230,
+    toolbar: { show: false },
+    zoom: { enabled: false },
+    fontFamily: 'inherit',
+    animations: { enabled: !reducedMotion, speed: 900 }
+  },
+  colors: ['#D4663F'],
+  stroke: {
+    curve: 'smooth',
+    width: 2.6,
+    colors: undefined,
+    lineCap: 'round'
+  },
+  fill: {
+    type: 'gradient',
+    gradient: {
+      shadeIntensity: 1,
+      opacityFrom: 0.35,
+      opacityTo: 0,
+      stops: [0, 100],
+      colorStops: [
+        { offset: 0, color: '#E8855D', opacity: 0.35 },
+        { offset: 100, color: '#E8855D', opacity: 0 }
+      ]
+    }
+  },
+  dataLabels: { enabled: false },
+  grid: {
+    borderColor: '#F1E9EB',
+    strokeDashArray: 4,
+    padding: { left: 8, right: 8 }
+  },
+  markers: {
+    size: 0,
+    hover: { size: 5 },
+    colors: ['#fff'],
+    strokeColors: '#D4663F',
+    strokeWidth: 2.5
+  },
+  xaxis: {
+    type: 'datetime',
+    tickAmount: 5,
+    axisBorder: { show: false },
+    axisTicks: { show: false },
+    tooltip: { enabled: false },
+    labels: {
+      datetimeUTC: true,
+      format: 'd MMM',
+      style: { colors: '#A69CA1', fontSize: '10.5px' }
+    }
+  },
+  yaxis: {
+    min: 0,
+    tickAmount: 4,
+    labels: {
+      style: { colors: '#A69CA1', fontSize: '10.5px' },
+      formatter: (v: number) => compactNaira(v * 100)
+    }
+  },
+  tooltip: {
+    custom: ({ dataPointIndex }: { dataPointIndex: number }) => {
+      const d = series.value[dataPointIndex]
+      if (!d) return ''
+      return `<div style="background:#2B2226;color:#fff;border-radius:10px;padding:8px 12px">
+        <div style="font-size:11px;opacity:.65">${shortDate(d.date)}</div>
+        <div style="font-size:14px;font-weight:700">${naira(d.revenue_kobo)}</div>
+        <div style="font-size:11px;color:#F9C3A0">${d.orders} order${d.orders === 1 ? '' : 's'}</div>
+      </div>`
+    }
+  }
+}))
 </script>
 
 <template>
@@ -525,86 +608,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="relative">
-            <svg
-              :key="chartKey"
-              :viewBox="`0 0 ${W} ${H}`"
-              class="chart w-full"
-              preserveAspectRatio="none"
-              @mousemove="onChartMove"
-              @mouseleave="hovered = null"
-            >
-              <defs>
-                <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#E8855D" stop-opacity="0.35" />
-                  <stop offset="100%" stop-color="#E8855D" stop-opacity="0" />
-                </linearGradient>
-                <linearGradient id="lineStroke" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stop-color="#F0A27D" />
-                  <stop offset="100%" stop-color="#C8663F" />
-                </linearGradient>
-              </defs>
-
-              <line
-                v-for="y in gridY"
-                :key="y"
-                :x1="PAD.l"
-                :x2="W - PAD.r"
-                :y1="y"
-                :y2="y"
-                stroke="#F1E9EB"
-                stroke-width="1"
-                stroke-dasharray="3 5"
-              />
-
-              <path :d="areaPath" fill="url(#areaFill)" class="chart-area" />
-              <path
-                :d="linePath"
-                fill="none"
-                stroke="url(#lineStroke)"
-                stroke-width="2.6"
-                stroke-linecap="round"
-                pathLength="1"
-                class="chart-line"
-              />
-
-              <template v-if="hoverPoint">
-                <line
-                  :x1="hoverPoint.x"
-                  :x2="hoverPoint.x"
-                  :y1="PAD.t"
-                  :y2="H - PAD.b"
-                  stroke="#E8855D"
-                  stroke-opacity="0.4"
-                  stroke-width="1"
-                />
-                <circle :cx="hoverPoint.x" :cy="hoverPoint.y" r="5" fill="#fff" stroke="#D4663F" stroke-width="2.5" />
-              </template>
-
-              <text
-                v-for="p in xLabels"
-                :key="p.d.date"
-                :x="p.x"
-                :y="H - 8"
-                text-anchor="middle"
-                class="chart-label"
-              >
-                {{ shortDate(p.d.date) }}
-              </text>
-            </svg>
-
-            <Transition name="fade">
-              <div
-                v-if="hoverPoint"
-                class="tooltip"
-                :style="{ left: `${(hoverPoint.x / W) * 100}%`, top: `${(hoverPoint.y / H) * 100}%` }"
-              >
-                <p class="tooltip-date">{{ shortDate(hoverPoint.d.date) }}</p>
-                <p class="tooltip-val">{{ naira(hoverPoint.d.revenue_kobo) }}</p>
-                <p class="tooltip-sub">{{ hoverPoint.d.orders }} order{{ hoverPoint.d.orders === 1 ? '' : 's' }}</p>
-              </div>
-            </Transition>
-          </div>
+         <apexchart type="area" height="230" :options="chartOptions" :series="chartSeries" />
         </div>
 
         <div v-if="data.orders" class="card p-6" data-aos="fade-up" data-aos-delay="180">

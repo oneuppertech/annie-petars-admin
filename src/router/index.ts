@@ -53,5 +53,5 @@ router.beforeEach(async (to) => {
   await auth.init()
   if (to.meta.requiresAdmin && !auth.isAdmin)
     return { name: 'admin-login', query: { redirect: to.fullPath } }
-  if (to.meta.guestOnly && auth.isAdmin) return '/admin/inventory'
+  if (to.meta.guestOnly && auth.isAdmin) return '/admin/dashboard'
 })

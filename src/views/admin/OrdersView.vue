@@ -53,6 +53,7 @@ async function load() {
   error.value = ''
   try {
     const res = await OrdersService.list(params())
+    console.log("orders:", res)
     if (my !== reqId) return
     orders.value = res.orders
     total.value = res.total

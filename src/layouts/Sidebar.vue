@@ -27,7 +27,7 @@ const visibleSidebarItems = computed(() =>
     <!-- Logo -->
     <div class="flex h-[76px] shrink-0 items-center px-6">
       <RouterLink
-        to="/dashboard"
+        to="/admin/dashboard"
         class="flex items-center gap-3"
         @click="$emit('navigate')"
       >
