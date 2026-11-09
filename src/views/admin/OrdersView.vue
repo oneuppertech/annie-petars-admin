@@ -11,7 +11,7 @@ import { naira, fmtDate, statusMeta, paymentTone, pill, initials, STATUS_OPTIONS
 import { useAuthStore } from '@/stores/auth'
 import type { OrderListItem, OrderStats, OrderStatus } from '@/types/orders'
 
-const ROUTES = { order: (id: string) => `/orders/${id}` }
+const ROUTES = { order: (id: string) => `/admin/orders/${id}` }
 
 const router = useRouter()
 const auth = useAuthStore()

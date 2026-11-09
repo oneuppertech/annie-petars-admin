@@ -171,7 +171,6 @@ const pill = (map: Record<string, string>, s: string) => `pill pill-${map[s] ?? 
 
 const PIPELINE = [
   { key: 'pending_payment', color: '#F2B84B' },
-  { key: 'paid', color: '#4FAE6A' },
   { key: 'processing', color: '#E8855D' },
   { key: 'ready_to_ship', color: '#8B8FE8' },
   { key: 'shipped', color: '#5B9BE0' },
