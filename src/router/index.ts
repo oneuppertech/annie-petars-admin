@@ -15,6 +15,11 @@ const router = createRouter({
       path: '/admin/inventory',
       component: () => import('@/views/admin/InventoryView.vue'),
       meta: { requiresAdmin: true }
+    },
+    {
+      path: '/admin/dashboard',
+      component: () => import('@/views/admin/Dashboard.vue'),
+      meta: { requiresAdmin: true }
     }
   ],
   scrollBehavior(to, from, savedPosition) {
