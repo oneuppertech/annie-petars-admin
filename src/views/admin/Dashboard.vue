@@ -16,7 +16,7 @@ const REFRESH_MS = 60_000
 const ROUTES = {
   orders: '/orders',
   order: (id: string) => `/orders/${id}`,
-  inventory: '/inventory',
+  inventory: '/admin/inventory',
   customRequests: '/custom-requests',
   messages: '/messages'
 }

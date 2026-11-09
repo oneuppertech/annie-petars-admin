@@ -20,6 +20,16 @@ const router = createRouter({
       path: '/admin/dashboard',
       component: () => import('@/views/admin/Dashboard.vue'),
       meta: { requiresAdmin: true }
+    },
+    {
+      path: '/admin/orders',
+      component: () => import('@/views/admin/OrdersView.vue'),
+      meta: { requiresAdmin: true }
+    },
+    {
+      path: '/admin/orders/:id',
+      component: () => import('@/views/admin/OrdersDetails.vue'),
+      meta: { requiresAdmin: true }
     }
   ],
   scrollBehavior(to, from, savedPosition) {

@@ -11,8 +11,14 @@ const sidebarItems = [
       {
         nav: 'overview',
         label: 'Inventory',
-        icon: 'mdi mdi-package-variant-closed',
+        icon: 'mdi mdi-cube-scan',
         to: '/admin/inventory',
+      },
+      {
+        nav: 'overview',
+        label: 'Orders',
+        icon: 'mdi mdi-cart-check',
+        to: '/admin/orders',
       },
     ],
   },
