@@ -17,7 +17,7 @@ async function submit() {
   try {
     await auth.login(email.value.trim(), password.value)
     const redirect = String(route.query.redirect || '')
-    router.replace(redirect.startsWith('/admin') ? redirect : '/admin/inventory')
+    router.replace(redirect.startsWith('/admin') ? redirect : '/admin/dashboard')
   } catch (e) {
     error.value = e.message || 'Unable to sign in'
   }
