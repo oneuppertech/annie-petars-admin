@@ -40,6 +40,7 @@ export interface OrderListParams extends Partial<OrderFilters> {
   has_tracking?: boolean
   min_total?: number
   max_total?: number
+    delivery_method?: 'delivery' | 'pickup'
 }
 
 export interface OrderListItem {
@@ -63,6 +64,11 @@ export interface OrderListItem {
   item_count: number
   items_preview: string[]
   allowed_next_statuses: OrderStatus[]
+  delivery_method: 'delivery' | 'pickup'
+shipped_at: string | null
+delivered_at: string | null
+estimated_delivery_date: string | null
+tracking_url: string | null
 }
 
 export interface OrderListResponse {
@@ -135,6 +141,11 @@ export interface OrderFull {
   customer: { id: string; full_name: string; email: string; phone: string | null; created_at: string } | null
   customer_order_count: number
   items: OrderItem[]
+  delivery_method: 'delivery' | 'pickup'
+shipped_at: string | null
+delivered_at: string | null
+estimated_delivery_date: string | null
+tracking_url: string | null
 }
 
 export interface OrderDetail {
@@ -217,6 +228,8 @@ export interface StatusInput {
   status: OrderStatus
   shipping_provider?: string
   tracking_number?: string
+  estimated_delivery_date?: string | null
+  tracking_url?: string | null
   note?: string
   restock?: boolean
 }

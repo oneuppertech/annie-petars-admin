@@ -49,55 +49,106 @@ const detail = async (action: string, body: Params) => {
 export const OrdersService = {
   /* ---- reads (always return a safe shape, even on empty/unexpected responses) ---- */
   async list(params: OrderListParams = {}): Promise<OrderListResponse> {
-  const r = await read('list', { ...params })
+    const r = await read('list', { ...params })
 
-  // Support both API response structures:
-  // { orders: [], total: 10 }
-  // { data: [...] }
-  // [...]
+    // Support both API response structures:
+    // { orders: [], total: 10 }
+    // { data: [...] }
+    // [...]
 
-  const records = Array.isArray(r)
-    ? r
-    : Array.isArray(r?.orders)
-      ? r.orders
-      : Array.isArray(r?.data)
-        ? r.data
-        : []
+    const records = Array.isArray(r)
+      ? r
+      : Array.isArray(r?.orders)
+        ? r.orders
+        : Array.isArray(r?.data)
+          ? r.data
+          : []
 
-  const mappedOrders = records.map((order: Any) => {
-    const items = Array.isArray(order.items) ? order.items : []
+    const mappedOrders = records.map((order: Any) => {
+      const items = Array.isArray(order.items) ? order.items : []
+
+      return {
+        ...order,
+
+        item_count:
+          order.item_count ??
+          items.reduce((sum: number, item: Any) => sum + Number(item.quantity || 0), 0),
+
+        items_preview:
+          order.items_preview ??
+          items.map((item: Any) => item.product_name || item.sku).filter(Boolean),
+
+        customer: order.customer ?? null
+      }
+    })
 
     return {
-      ...order,
-
-      item_count: order.item_count ??
-        items.reduce(
-          (sum: number, item: Any) => sum + Number(item.quantity || 0),
-          0
-        ),
-
-      items_preview: order.items_preview ??
-        items.map((item: Any) => item.product_name || item.sku).filter(Boolean),
-
-      customer: order.customer ?? null
+      total: Number(r?.total ?? r?.count ?? mappedOrders.length),
+      page: Number(r?.page) || 1,
+      limit: Number(r?.limit) || params.limit || 20,
+      orders: mappedOrders
     }
-  })
-
-  return {
-    total: Number(r?.total ?? r?.count ?? mappedOrders.length),
-    page: Number(r?.page) || 1,
-    limit: Number(r?.limit) || params.limit || 20,
-    orders: mappedOrders
-  }
-},
+  },
   async get(id: string): Promise<OrderDetail> {
     const r = await read('order', { id })
     if (!r?.order) throw new Error('Order not found')
     return r as OrderDetail
   },
   async stats(params: { from?: string; to?: string } = {}): Promise<OrderStats | null> {
-    const r = await read('stats', params)
-    return r?.totals ? (r as OrderStats) : null
+    try {
+      const response = await read('stats', params)
+
+      console.log('[Orders Stats] Raw response:', response)
+
+      // Backend already returns calculated statistics
+      if (response?.totals) {
+        return response as OrderStats
+      }
+
+      // Temporary fallback: fetch the orders list
+      const result = await OrdersService.list({
+        ...params,
+        page: 1,
+        limit: 1000
+      })
+
+      const orders = result?.orders ?? []
+
+      const paidOrders = orders.filter((order: any) => order.payment_status === 'paid')
+
+      const guestOrders = orders.filter((order: any) => !order.customer_id)
+
+      const uniqueCustomers = new Set(
+        orders.filter((order: any) => order.customer_id).map((order: any) => order.customer_id)
+      )
+
+      const paidTotal = paidOrders.reduce(
+        (sum: number, order: any) => sum + Number(order.total_kobo || 0),
+        0
+      )
+
+      const averageOrder = paidOrders.length ? Math.round(paidTotal / paidOrders.length) : 0
+
+      const totals = {
+        orders: Number(result?.total ?? orders.length),
+        customers: uniqueCustomers.size,
+        guests: guestOrders.length,
+        avg_order_kobo: averageOrder
+      }
+
+      console.log('[Orders Stats] Temporary calculated totals:', totals)
+
+      return {
+        totals,
+        attention: {
+          pending_payment: orders.filter((order: any) => order.payment_status === 'pending').length,
+          processing: orders.filter((order: any) => order.status === 'processing').length
+        }
+      } as OrderStats
+    } catch (error) {
+      console.error('[Orders Stats] Failed:', error)
+      return null
+    }
   },
   invoice: (id: string) => read('invoice', { id }) as Promise<InvoiceResponse>,
   exportCsv: (params: OrderListParams = {}) =>

@@ -1,8 +1,8 @@
-
 import { getAdminClient } from './supabaseAdmin.ts'
 import { HttpError } from './http.ts'
 import { sendOrderEmail } from './sendOrderNotifications.ts'
-import type { OrderEmailData } from './orderEmails.ts'
+import { sendSms } from './termii.ts'
+import { orderSms, type OrderEmailData } from './orderEmails.ts'
 
 type PaymentTransaction = {
   reference: string
@@ -14,19 +14,13 @@ type PaymentTransaction = {
 }
 
 function getShippingAddress(value: unknown): OrderEmailData['shippingAddress'] {
-  const a = (
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? value
-      : {}
-  ) as Record<string, unknown>
+  const a = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<
+    string,
+    unknown
+  >
 
   return {
-    line1: String(
-      a.line1 ??
-      a.address_line_1 ??
-      a.address ??
-      ''
-    ),
+    line1: String(a.line1 ?? a.address_line_1 ?? a.address ?? ''),
     city: String(a.city ?? ''),
     state: String(a.state ?? ''),
     phone: String(a.phone ?? a.phone_number ?? '')
@@ -34,19 +28,15 @@ function getShippingAddress(value: unknown): OrderEmailData['shippingAddress'] {
 }
 
 function getCustomerName(value: unknown): string {
-  const a = (
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? value
-      : {}
-  ) as Record<string, unknown>
+  const a = (value && typeof value === 'object' && !Array.isArray(value) ? value : {}) as Record<
+    string,
+    unknown
+  >
 
   const first = String(a.first_name ?? a.firstname ?? '').trim()
   const last = String(a.last_name ?? a.lastname ?? '').trim()
 
-  return (
-    [first, last].filter(Boolean).join(' ') ||
-    String(a.full_name ?? a.name ?? 'Customer')
-  )
+  return [first, last].filter(Boolean).join(' ') || String(a.full_name ?? a.name ?? 'Customer')
 }
 
 function getProductImage(snapshot: unknown): string | null {
@@ -56,22 +46,16 @@ function getProductImage(snapshot: unknown): string | null {
 
   const s = snapshot as Record<string, unknown>
 
-  const image =
-    s.image_url ??
-    s.image ??
-    s.featured_image ??
-    s.thumbnail
+  const image = s.image_url ?? s.image ?? s.featured_image ?? s.thumbnail
 
-  return typeof image === 'string' && /^https?:\/\//i.test(image)
-    ? image
-    : null
+  return typeof image === 'string' && /^https?:\/\//i.test(image) ? image : null
 }
 
 export async function settle(tx: PaymentTransaction) {
   const db = getAdminClient()
 
   if (tx.status !== 'success') {
-    await db
+    const { error: paymentError } = await db
       .from('payments')
       .update({
         status: 'failed',
@@ -80,6 +64,10 @@ export async function settle(tx: PaymentTransaction) {
       .eq('provider_reference', tx.reference)
       .neq('status', 'paid')
 
+    if (paymentError) {
+      console.error('[Payment] Failed to update payment status:', paymentError)
+    }
+
     return {
       paid: false,
       status: tx.status
@@ -87,14 +75,11 @@ export async function settle(tx: PaymentTransaction) {
   }
 
   // Atomically mark the order as paid.
-  const { data: newlyPaid, error } = await db.rpc(
-    'mark_order_paid',
-    {
-      p_reference: tx.reference,
-      p_amount: tx.amount,
-      p_raw: tx
-    }
-  )
+  const { data: newlyPaid, error } = await db.rpc('mark_order_paid', {
+    p_reference: tx.reference,
+    p_amount: tx.amount,
+    p_raw: tx
+  })
 
   if (error) {
     throw new HttpError(409, error.message)
@@ -108,35 +93,28 @@ export async function settle(tx: PaymentTransaction) {
     .single()
 
   if (orderError || !order) {
-    throw new HttpError(
-      500,
-      orderError?.message ?? 'Could not retrieve paid order'
-    )
+    throw new HttpError(500, orderError?.message ?? 'Could not retrieve paid order')
   }
 
-  // This payment was already processed.
+  // Avoid sending duplicate notifications when Paystack
+  // calls the webhook more than once.
   if (newlyPaid !== true) {
     return {
       paid: true,
       status: 'success',
-      email: 'already_processed'
+      email: 'already_processed',
+      sms: 'already_processed'
     }
   }
 
-  // Retrieve the order items.
+  // Retrieve order items.
   const { data: items, error: itemsError } = await db
     .from('order_items')
     .select('*')
     .eq('order_id', order.id)
 
   if (itemsError) {
-    console.error('[Order Email] Item retrieval failed:', itemsError)
-
-    return {
-      paid: true,
-      status: 'success',
-      email: 'pending_data_error'
-    }
+    console.error('[Order Notifications] Item retrieval failed:', itemsError)
   }
 
   const emailData: OrderEmailData = {
@@ -159,40 +137,53 @@ export async function settle(tx: PaymentTransaction) {
     totalKobo: Number(order.total_kobo),
 
     paymentReference: tx.reference,
-    paidAt:
-      tx.paid_at ??
-      tx.transaction_date ??
-      new Date().toISOString(),
+    paidAt: tx.paid_at ?? tx.transaction_date ?? new Date().toISOString(),
 
     shippingAddress: getShippingAddress(order.shipping_address)
   }
 
-  // Send the Order Placed email.
-  let emailStatus = 'sent'
+  // -----------------------------------------
+  // Send Order Placed Email
+  // -----------------------------------------
 
-  try {
-    const result = await sendOrderEmail(
-      order.email,
-      'placed',
-      emailData
-    )
+  let emailStatus = 'skipped'
 
-    console.log(
-      `[Order Email] Placed email sent for ${order.order_number}`,
-      result
-    )
-  } catch (emailError) {
-    emailStatus = 'failed'
+  if (order.email) {
+    try {
+      const result = await sendOrderEmail(order.email, 'placed', emailData)
 
-    console.error(
-      `[Order Email] Failed for ${order.order_number}:`,
-      emailError
-    )
+      if (result.ok) {
+        emailStatus = 'sent'
+
+        console.log(`[Order Email] Successfully sent for ${order.order_number}`, result.id)
+      } else {
+        emailStatus = 'failed'
+
+        console.error(`[Order Email] Failed for ${order.order_number}:`, result.error)
+      }
+    } catch (emailError) {
+      emailStatus = 'failed'
+
+      console.error(`[Order Email] Error for ${order.order_number}:`, emailError)
+    }
   }
+
+  // -----------------------------------------
+  // Send Order Placed SMS
+  // -----------------------------------------
+
+  // -----------------------------------------
+  // SMS Notifications (Temporarily Disabled)
+  // -----------------------------------------
+
+  const smsStatus = 'skipped'
+
+  console.log(`[Order SMS] Skipped for ${order.order_number}: Sender ID pending approval`)
 
   return {
     paid: true,
     status: 'success',
-    email: emailStatus
+    email: emailStatus,
+    sms: smsStatus
   }
 }

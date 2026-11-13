@@ -68,9 +68,15 @@ async function load() {
 
 async function loadStats() {
   try {
-    stats.value = await OrdersService.stats({ from: filters.from, to: filters.to })
-  } catch (e) {
-    console.error(e)
+    stats.value = await OrdersService.stats({
+      from: filters.from || undefined,
+      to: filters.to || undefined
+    })
+
+    console.log('[Dashboard] Stats:', stats.value)
+  } catch (error) {
+    console.error('[Dashboard] Stats loading failed:', error)
+    stats.value = null
   }
 }
 
@@ -109,10 +115,8 @@ function resetFilters() {
 const kpis = computed(() => {
   const t = stats.value?.totals
   return [
-    { label: 'Revenue', value: naira(t?.revenue_kobo ?? 0, 0), sub: `${t?.paid_orders ?? 0} paid orders`, icon: 'wallet', tone: 'primary' },
     { label: 'Orders', value: String(t?.orders ?? 0), sub: `${t?.unique_customers ?? 0} customers · ${t?.guest_orders ?? 0} guest`, icon: 'package', tone: 'peach' },
     { label: 'Average order', value: naira(t?.avg_order_kobo ?? 0, 0), sub: 'Paid orders only', icon: 'trend', tone: 'green' },
-    { label: 'Refunded', value: naira(t?.refunded_kobo ?? 0, 0), sub: 'In this period', icon: 'undo', tone: 'red' }
   ]
 })
 
@@ -209,7 +213,6 @@ const refresh = () => { load(); loadStats() }
           <div class="kpi-icon" :class="`tone-${k.tone}`"><UiIcon :name="k.icon" :size="20" /></div>
           <p class="kpi-label">{{ k.label }}</p>
           <p class="kpi-value">{{ k.value }}</p>
-          <p class="kpi-sub">{{ k.sub }}</p>
         </div>
       </section>
 

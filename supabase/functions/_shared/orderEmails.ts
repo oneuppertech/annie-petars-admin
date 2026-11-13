@@ -55,6 +55,11 @@ const env = (k: string, d = '') => Deno.env.get(k) || d
 const ASSETS = () => env('EMAIL_ASSETS_URL').replace(/\/$/, '')
 const SHOP_URL = () => env('SHOP_URL', 'https://shop.anniepetars.com')
 const WHATSAPP = () => env('WHATSAPP_URL', 'https://wa.me/2348084903580')
+const LOGO_URL = () =>
+  env(
+    'EMAIL_LOGO_URL',
+    'https://gqomllacgzkdecqsdhwh.supabase.co/storage/v1/object/public/email-assets/annie-peters-logo.png'
+  )
 
 const esc = (s: unknown) =>
   String(s ?? '')
@@ -231,7 +236,13 @@ export function renderOrderEmail(event: OrderEvent, d: OrderEmailData) {
     </td></tr>
 
     <tr><td align="center" style="padding:24px 24px 0;">
-      <img src="${assets}/badge-${event}.png" width="120" height="120" alt="" style="display:block;width:120px;height:120px;border:0;" />
+      <img
+  src="${LOGO_URL()}"
+  width="160"
+  height="48"
+  alt="AnniePetars"
+  style="display:block;width:160px;height:auto;max-width:100%;border:0;outline:none;text-decoration:none;"
+/>
     </td></tr>
 
     <tr><td align="center" style="padding:24px 28px 0;">
