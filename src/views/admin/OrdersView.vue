@@ -279,7 +279,6 @@ const refresh = () => { load(); loadStats() }
 
         <div v-else-if="!orders.length" class="px-6 py-14 text-center">
           <div class="kpi-icon tone-peach mx-auto mb-3"><UiIcon name="folder" :size="20" /></div>
-          <p class="card-title">{{ hasFilters ? 'No orders match these filters' : 'No orders yet' }}</p>
           <p class="muted mt-1">{{ hasFilters ? 'Try a different search or clear the filters.' : 'New orders will show up here as customers check out.' }}</p>
           <button v-if="hasFilters" class="btn-ghost mt-4" @click="resetFilters">Clear filters</button>
         </div>
