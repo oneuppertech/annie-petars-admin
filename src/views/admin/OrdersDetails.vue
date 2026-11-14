@@ -20,7 +20,19 @@ import {
   relTime
 } from '@/utils/orders'
 import type { OrderDetail, OrderStatus } from '@/types/orders'
+import { downloadInvoice } from '@/utils/orderInvoice'
 
+const invoicing = ref(false)
+async function printInvoice(internal: boolean) {
+  invoicing.value = true
+  try {
+    await downloadInvoice(await OrdersService.invoice(id.value), { internal })
+  } catch (e) {
+    toast(errMsg(e), 'red')
+  } finally {
+    invoicing.value = false
+  }
+}
 const ROUTES = { orders: '/admin/orders' }
 const COURIERS = ['GIG Logistics', 'DHL', 'Kwik', 'Sendbox', 'Bolt Delivery', 'Own rider']
 const route = useRoute()
@@ -367,7 +379,14 @@ const addrLines = computed(() => {
               Placed {{ fmtDate(o.placed_at) }} · Updated {{ relTime(o.updated_at) }}
             </p>
           </div>
-
+          <div class="flex flex-wrap gap-2">
+  <button class="btn-ghost" :disabled="invoicing" @click="printInvoice(true)">
+    {{ invoicing ? 'Preparing…' : 'Invoice PDF' }}
+  </button>
+  <button class="btn-ghost" :disabled="invoicing" @click="printInvoice(false)">
+    Customer copy
+  </button>
+</div>
           <div v-if="canWrite" class="flex flex-wrap gap-2">
             <button v-if="canPay && canMoney" class="btn-primary" @click="openDlg('payment')">
               <UiIcon name="wallet" /> Record payment

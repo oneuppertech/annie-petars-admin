@@ -287,6 +287,78 @@ async function notifyOrderStatus(order: Any, status: string, reason?: string) {
     })
   }
 }
+
+const logoCache = new Map<string, string | null>()
+
+/** PNG/JPEG only: pdfmake can't embed webp/svg. */
+async function logoDataUrl(url?: string | null): Promise<string | null> {
+  if (!url) return null
+  if (logoCache.has(url)) return logoCache.get(url)!
+  let result: string | null = null
+  try {
+    const res = await fetch(url)
+    const type = (res.headers.get('content-type') ?? '').split(';')[0].trim()
+    if (res.ok && ['image/png', 'image/jpeg'].includes(type)) {
+      const buf = new Uint8Array(await res.arrayBuffer())
+      let bin = ''
+      for (let i = 0; i < buf.length; i += 0x8000)
+        bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+      result = `data:${type};base64,${btoa(bin)}`
+    } else {
+      console.warn('[Invoice] Logo skipped (not ok / not png|jpeg)', { type, status: res.status })
+    }
+  } catch (e) {
+    console.warn('[Invoice] Logo fetch failed', e instanceof Error ? e.message : e)
+  }
+  logoCache.set(url, result)
+  return result
+}
+
+async function loadInvoice(db: Any, id: string) {
+  const detail = await loadDetail(db, id)
+
+  const { data: setting } = await db
+    .from('shop_settings')
+    .select('value')
+    .eq('key', 'invoice')
+    .maybeSingle()
+  const s: Any = setting?.value ?? {}
+  const business = {
+    name: s.name ?? Deno.env.get('INVOICE_BUSINESS_NAME') ?? 'AnniePetars',
+    address: s.address ?? null,
+    email: s.email ?? null,
+    phone: s.phone ?? null,
+    website: s.website ?? null,
+    footer_note: s.footer_note ?? 'Thank you for shopping with us.'
+  }
+  const logoUrl = s.logo_url ?? Deno.env.get('INVOICE_LOGO_URL')
+
+  // Resolve who performed each timeline action
+  const actorIds = [...new Set(detail.timeline.map((t: Any) => t.actor_user_id).filter(Boolean))]
+  const { data: actors } = actorIds.length
+    ? await db.from('profiles').select('id, full_name').in('id', actorIds)
+    : { data: [] }
+  const amap = new Map((actors ?? []).map((a: Any) => [a.id, a.full_name]))
+  const timeline = detail.timeline.map((t: Any) => ({
+    ...t,
+    actor_name: amap.get(t.actor_user_id) ?? null
+  }))
+
+  // Partial refunds aren't in `payments`, so total them from the audit log
+  const refunded_kobo = timeline
+    .filter((t: Any) => ['order.refunded', 'order.partial_refund'].includes(t.action))
+    .reduce((sum: number, t: Any) => sum + Number(t.metadata?.amount_kobo ?? 0), 0)
+
+  return {
+    ...detail,
+    timeline,
+    refunded_kobo,
+    business,
+    logo_data_url: await logoDataUrl(logoUrl),
+    generated_at: new Date().toISOString(),
+    filename: `invoice-${detail.order.order_number}.pdf`
+  }
+}
 /* ---------- handler ---------- */
 
 Deno.serve(
@@ -302,6 +374,11 @@ Deno.serve(
         const id = text(param('id'), 80)
         if (!id) throw new HttpError(400, 'Order id is required')
         return reply(cors, await loadDetail(db, id))
+      }
+      if (param('resource') === 'invoice') {
+        const id = text(param('id'), 80)
+        if (!id) throw new HttpError(400, 'Order id is required')
+        return reply(cors, await loadInvoice(db, id))
       }
 
       // ----- list -----
