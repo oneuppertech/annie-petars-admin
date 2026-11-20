@@ -20,6 +20,12 @@ const sidebarItems = [
         icon: 'mdi mdi-cart-check',
         to: '/admin/orders',
       },
+      {
+        nav: 'overview',
+        label: 'Custom Requests',
+       icon: 'mdi mdi-clipboard-edit-outline',
+        to: '/custom-requests',
+      },
     ],
   },
 ]

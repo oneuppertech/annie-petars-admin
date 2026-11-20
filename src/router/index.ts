@@ -27,6 +27,11 @@ const router = createRouter({
       meta: { requiresAdmin: true }
     },
     {
+      path: '/custom-requests',
+      component: () => import('@/views/admin/CustomRequests.vue'),
+      meta: { requiresAdmin: true }
+    },
+    {
       path: '/admin/orders/:id',
       component: () => import('@/views/admin/OrdersDetails.vue'),
       meta: { requiresAdmin: true }
