@@ -13,6 +13,9 @@ import type {
   VariantOption,
   Address
 } from '@/types/orders'
+import type { InvoiceData } from '@/utils/orderInvoice'
+// ...
+
 
 const ENDPOINT = '/admin-orders' // <- supabase/functions/<name>
 
@@ -150,7 +153,7 @@ export const OrdersService = {
       return null
     }
   },
-  invoice: (id: string) => read('invoice', { id }) as Promise<InvoiceResponse>,
+  invoice: (id: string) => read('invoice', { id }) as Promise<InvoiceData>,
   exportCsv: (params: OrderListParams = {}) =>
     read('export', { ...params }) as Promise<ExportResponse>,
   async variants(q: string) {
