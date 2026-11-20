@@ -727,7 +727,7 @@ const chartOptions = computed(() => ({
             <button class="link" @click="go(ROUTES.customRequests)">View all</button>
           </div>
           <ul class="divide-y divide-[var(--line)]">
-            <li v-for="r in data.custom_requests.recent.slice(0, 5)" :key="r.id" class="flex items-center justify-between gap-3 py-3">
+            <li v-for="r in data.custom_requests.recent.slice(0, 4)" :key="r.id" class="flex items-center justify-between gap-3 py-3">
               <div class="min-w-0">
                 <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ r.name }}</p>
                 <p class="cell-sub truncate">{{ r.outfit_type }} · {{ relTime(r.created_at) }}</p>

@@ -206,6 +206,29 @@ Deno.serve(handle(async (req, cors) => {
     if (b.notify !== false) fire('paid', fresh, { orderNumber: row?.out_order_number })
     return reply(cors, { success: true, order: { id: row?.out_order_id, order_number: row?.out_order_number }, request: fresh })
   }
+    // ================= REVERT PAYMENT =================
+  if (action === 'revert_payment') {
+    if (!['owner', 'admin'].includes(role)) throw new HttpError(403, 'Only an owner or admin can revert a payment')
+    const r = await load(b.id)
+    if (!r.order_id || !['paid', 'in_production'].includes(r.status)) {
+      throw new HttpError(409, 'This request has no payment to revert')
+    }
+    const reason = text(b.reason, 500)
+    if (!reason) throw new HttpError(400, 'Add a reason for reverting the payment')
+
+    const { data, error } = await db.rpc('revert_custom_request_payment', {
+      p_request_id: r.id,
+      p_actor: uid,
+      p_reason: reason
+    })
+    if (error) {
+      console.error(error)
+      throw new HttpError(/no payment|already|not found|not marked/i.test(error.message) ? 409 : 500, error.message)
+    }
+    const row = Array.isArray(data) ? data[0] : data
+    await audit('revert_payment', r.id, { order_number: row?.out_order_number, from: r.status })
+    return reply(cors, { success: true, request: await load(r.id) })
+  }
 
   // ================= UPDATE DETAILS =================
   if (action === 'update') {

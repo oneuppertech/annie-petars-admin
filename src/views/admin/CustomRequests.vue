@@ -409,7 +409,13 @@ const actions = computed(() =>
     ? (detail.value?.allowed ?? []).map((to) => ({ to, text: actionLabel(req.value!.status, to) }))
     : []
 )
-
+const canRevert = computed(
+  () =>
+    canWrite.value &&
+    ['owner', 'admin'].includes(detail.value?.role ?? '') &&
+    !!req.value?.order_id &&
+    ['paid', 'in_production'].includes(req.value?.status ?? '')
+)
 const EXCLUDE = new Set([
   'request_number',
   'name',
@@ -486,6 +492,8 @@ function eventTitle(e: Req) {
       return Array.isArray(m) && m.length ? `Updated ${m.map(label).join(', ')}` : 'Details updated'
     case 'email':
       return 'Email to customer'
+    case 'payment_reverted':
+      return `Payment reverted${m.order_number ? ` (order ${m.order_number})` : ''}`
     default:
       return label(e.event_type || 'event')
   }
@@ -535,7 +543,7 @@ const resend = (kind: 'received' | 'quoted') =>
 /* Modal (one component, several forms)                                */
 /* ------------------------------------------------------------------ */
 const modal = reactive({
-  type: '' as '' | 'status' | 'info' | 'quote' | 'payment' | 'edit' | 'delete',
+  type: '' as '' | 'status' | 'info' | 'quote' | 'payment' | 'edit' | 'delete' | 'revert',
   to: '',
   error: '',
   busy: false
@@ -611,6 +619,8 @@ const modalTitle = computed(() => {
       return req.value?.status === 'quoted' ? 'Revise quote' : 'Send quote'
     case 'payment':
       return 'Record payment'
+    case 'revert':
+      return 'Revert payment'
     case 'edit':
       return 'Edit details'
     case 'delete':
@@ -690,6 +700,11 @@ async function submitModal() {
     // The server rejects quantity edits once an order exists, so only send it when it changed
     if (qty !== r.quantity) payload.quantity = qty
     ok = 'Details saved'
+  } else if (modal.type === 'revert') {
+    if (!f.message.trim()) return (modal.error = 'Add a reason for reverting the payment')
+    action = 'revert_payment'
+    payload = { reason: f.message.trim() }
+    ok = 'Payment reverted'
   } else if (modal.type === 'delete') {
     action = 'delete'
     ok = 'Request deleted'
@@ -1059,6 +1074,14 @@ onBeforeUnmount(() => {
                   >
                     <Ico n="trash" class="h-4 w-4" />Delete
                   </button>
+                  <button
+                    v-if="canRevert"
+                    class="btn-danger"
+                    :disabled="busy"
+                    @click="openModal('revert')"
+                  >
+                    <Ico n="refresh" class="h-4 w-4" />Revert payment
+                  </button>
                 </div>
               </div>
 
@@ -1427,6 +1450,21 @@ onBeforeUnmount(() => {
               </p>
             </template>
 
+            <template v-else-if="modal.type === 'revert'">
+              <p class="muted mb-3">
+                This cancels order {{ detail?.order?.order_number }}, marks its payment as refunded
+                and moves the request back to Quoted. It does not send money back, so refund the
+                customer through your payment provider.
+              </p>
+              <label class="field-label" for="m-rev">Reason</label>
+              <textarea
+                id="m-rev"
+                v-model="f.message"
+                class="input"
+                rows="3"
+                maxlength="500"
+              ></textarea>
+            </template>
             <!-- delete -->
             <template v-else-if="modal.type === 'delete'">
               <p class="muted">
@@ -1444,7 +1482,9 @@ onBeforeUnmount(() => {
               <button
                 type="submit"
                 :class="
-                  modal.type === 'delete' || isDanger(modal.to) ? 'btn-danger solid' : 'btn-primary'
+                  modal.type === 'delete' || modal.type === 'revert' || isDanger(modal.to)
+                    ? 'btn-danger solid'
+                    : 'btn-primary'
                 "
                 :disabled="modal.busy"
               >
