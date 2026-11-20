@@ -562,7 +562,8 @@ const f = reactive({
   quantity: '',
   neededBy: '',
   eventDate: '',
-  notes: ''
+  notes: '',
+  genLink: true
 })
 
 function openModal(type: typeof modal.type, to = '') {
@@ -661,14 +662,15 @@ async function submitModal() {
     if (Number.isNaN(price) || price <= 0)
       return (modal.error = 'Outfit price must be more than zero')
     if (Number.isNaN(ship)) return (modal.error = 'Delivery must be a valid amount')
-    if (f.link.trim() && !/^https:\/\//i.test(f.link.trim()))
+    if (!f.genLink && f.link.trim() && !/^https:\/\//i.test(f.link.trim()))
       return (modal.error = 'Payment link must start with https://')
     if (f.expires && f.expires < todayIso()) return (modal.error = 'Expiry date is in the past')
     action = 'send_quote'
     payload = {
       quote_kobo: price,
       shipping_kobo: ship,
-      payment_link: f.link.trim() || undefined,
+      generate_link: f.genLink,
+      payment_link: f.genLink ? undefined : f.link.trim() || undefined,
       quote_expires_at: f.expires || undefined,
       agreed_timeline: f.timeline.trim() || undefined,
       message: f.message.trim() || undefined,
@@ -1354,8 +1356,20 @@ onBeforeUnmount(() => {
                   />
                 </div>
               </div>
-              <label class="field-label mt-3" for="m-link">Payment link (optional)</label>
-              <input id="m-link" v-model="f.link" class="input" type="url" placeholder="https://" />
+              <label class="check"
+                ><input v-model="f.genLink" type="checkbox" /> Generate a Paystack payment link for
+                the total</label
+              >
+              <template v-if="!f.genLink">
+                <label class="field-label mt-3" for="m-link">Payment link (optional)</label>
+                <input
+                  id="m-link"
+                  v-model="f.link"
+                  class="input"
+                  type="url"
+                  placeholder="https://"
+                />
+              </template>
               <label class="field-label mt-3" for="m-note">Message (optional)</label>
               <textarea
                 id="m-note"
