@@ -106,15 +106,13 @@ Deno.serve(
         metadata: o.meta ?? {}
       })
     const audit = (act: string, id: string, metadata: unknown = {}) =>
-      db
-        .from('audit_logs')
-        .insert({
-          actor_user_id: uid,
-          action: `custom_request.${act}`,
-          entity_type: 'custom_request',
-          entity_id: id,
-          metadata
-        })
+      db.from('audit_logs').insert({
+        actor_user_id: uid,
+        action: `custom_request.${act}`,
+        entity_type: 'custom_request',
+        entity_id: id,
+        metadata
+      })
     const bg = (p: Promise<unknown>) => {
       // @ts-ignore EdgeRuntime exists on Supabase edge
       if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(p)
@@ -258,17 +256,17 @@ Deno.serve(
       const expires = isoDate(b.quote_expires_at)
       if (expires && expires < new Date().toISOString().slice(0, 10))
         throw new HttpError(400, 'Expiry date is in the past')
-          if (b.generate_link === true && !link) {
-      const tx = await initTx({
-        email: r.email,
-        amount: quote + shipping,
-        currency: 'NGN',
-        reference: `CR-${r.request_number}-${Date.now().toString(36)}`,
-        callback_url: Deno.env.get('SHOP_URL') || 'https://shop.anniepetars.com',
-        metadata: { source: 'custom_request', request_id: r.id, request_number: r.request_number }
-      })
-      link = tx.authorization_url
-    }
+      if (b.generate_link === true && !link) {
+        const tx = await initTx({
+          email: r.email,
+          amount: quote + shipping,
+          currency: 'NGN',
+          callback_url: Deno.env.get('SHOP_URL') || 'https://shop.anniepetars.com',
+          reference: `${r.request_number}-${Date.now()}`,
+          metadata: { source: 'custom_request', request_id: r.id, request_number: r.request_number }
+        })
+        link = tx.authorization_url
+      }
       const timeline = text(b.agreed_timeline, 300) || null
       const message = text(b.message, 2000) || null
       const upd = await move(r, 'quoted', {

@@ -17,7 +17,7 @@ const REFRESH_MS = 60_000
 // Adjust to your router
 const ROUTES = {
   orders: '/admin/orders',
-  order: (id: string) => `admin/orders/${id}`,
+  order: (id: string) => `/admin/orders/${id}`,
   inventory: '/admin/inventory',
   customRequests: '/custom-requests',
   messages: '/messages'
@@ -166,7 +166,19 @@ const PAYMENT_TONE: Record<string, string> = {
   failed: 'red',
   refunded: 'red'
 }
-const REQUEST_TONE: Record<string, string> = { new: 'peach' }
+const REQUEST_TONE: Record<string, string> = {
+  new: 'peach',
+  in_review: 'blue',
+  needs_info: 'amber',
+  quoted: 'violet',
+  accepted: 'green',
+  paid: 'green',
+  in_production: 'blue',
+  ready: 'violet',
+  completed: 'green',
+  declined: 'red',
+  cancelled: 'grey'
+}
 const pill = (map: Record<string, string>, s: string) => `pill pill-${map[s] ?? 'grey'}`
 
 const PIPELINE = [
