@@ -318,7 +318,7 @@ async function remove() {
         </div>
 
         <ImageManager v-else-if="tab === 'images'" v-model="images" />
-        <VariantEditor v-else v-model="variants" :base-sku="form.sku" />
+        <VariantEditor v-else v-model="variants" :base-sku="form.sku" :currency="form.currency" />
       </v-card-text>
 
       <v-card-actions class="border-t px-6">

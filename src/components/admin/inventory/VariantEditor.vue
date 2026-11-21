@@ -73,16 +73,16 @@ const remove = (i) => (variants.value = variants.value.filter((_, idx) => idx !=
         class="col-span-3"
       />
       <v-text-field
-        variant="outlined"
-        color="primary"
-        v-model="v.price"
-        label="Price ₦"
-        type="number"
-        min="0"
-        density="compact"
-        hide-details
-        class="col-span-2"
-      />
+  variant="outlined"
+  color="primary"
+  v-model="v.price"
+  :label="`Price ${currency}`"
+  type="number"
+  min="0"
+  density="compact"
+  hide-details
+  class="col-span-2"
+/>
       <v-text-field
         variant="outlined"
         color="primary"
