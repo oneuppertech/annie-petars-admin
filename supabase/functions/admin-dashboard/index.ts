@@ -69,20 +69,20 @@ const REQUEST_COLS =
 
 /* ---------- helpers ---------- */
 async function resolveCurrency(db: DB, wanted: string | null) {
-  const [paid, prods] = await Promise.all([
+  const [orders, prods] = await Promise.all([
     db
       .from('orders')
       .select('currency,total_kobo')
       .eq('payment_status', 'paid')
       .not('status', 'in', '(cancelled,refunded)')
       .limit(10000),
-    db.from('products').select('currency').eq('status', 'active')
+    db.from('products').select('currency')
   ])
-  check(paid.error)
+  check(orders.error)
   check(prods.error)
 
   const totals = new Map<string, number>()
-  for (const o of paid.data || [])
+  for (const o of orders.data || [])
     totals.set(o.currency, (totals.get(o.currency) || 0) + Number(o.total_kobo))
   for (const p of prods.data || []) if (!totals.has(p.currency)) totals.set(p.currency, 0)
 

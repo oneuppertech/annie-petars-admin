@@ -17,7 +17,8 @@ import {
   pill,
   describeTimeline,
   humanize,
-  relTime
+  relTime,
+  money
 } from '@/utils/orders'
 import type { OrderDetail, OrderStatus } from '@/types/orders'
 import { downloadInvoice } from '@/utils/orderInvoice'
@@ -61,6 +62,7 @@ const errMsg = (e: any) =>
 
 const d = computed(() => detail.value)
 const o = computed(() => detail.value?.order)
+const cur = computed(() => o.value?.currency || 'NGN')
 const closed = computed(() => ['cancelled', 'refunded'].includes(o.value?.status ?? ''))
 const canShipEdit = computed(
   () => !!o.value && o.value.status !== 'pending_payment' && !closed.value
@@ -81,7 +83,7 @@ const mismatch = computed(() => {
   if (!r.subtotal_matches_items) out.push('Subtotal does not match the line items.')
   if (!r.total_matches_parts) out.push('Total does not equal subtotal + shipping − discount.')
   if (o.value.payment_status === 'paid' && !r.payment_matches_total)
-    out.push(`Payments received (${naira(r.paid_kobo)}) differ from the order total.`)
+   out.push(`Payments received (${money(r.paid_kobo, cur.value)}) differ from the order total.`)
   return out
 })
 
@@ -451,10 +453,10 @@ const addrLines = computed(() => {
                   </div>
                   <div class="text-right">
                     <p class="cell-sub tabular-nums">
-                      {{ naira(i.unit_price_kobo) }} × {{ i.quantity }}
+                      {{ money(i.unit_price_kobo, cur) }} × {{ i.quantity }}
                     </p>
                     <p class="text-[14px] font-semibold tabular-nums text-[var(--ink)]">
-                      {{ naira(i.line_total_kobo) }}
+                      {{ money(i.line_total_kobo, cur) }}
                     </p>
                   </div>
                 </li>
@@ -462,21 +464,21 @@ const addrLines = computed(() => {
               <dl class="space-y-1.5 border-t border-[var(--line)] px-6 py-4 text-[13.5px]">
                 <div class="flex justify-between">
                   <dt class="muted">Subtotal</dt>
-                  <dd class="tabular-nums">{{ naira(o.subtotal_kobo) }}</dd>
+                  <dd class="tabular-nums">{{ money(o.subtotal_kobo, cur) }}</dd>
                 </div>
                 <div class="flex justify-between">
                   <dt class="muted">Shipping</dt>
-                  <dd class="tabular-nums">{{ naira(o.shipping_kobo) }}</dd>
+                  <dd class="tabular-nums">{{ money(o.shipping_kobo, cur) }}</dd>
                 </div>
                 <div v-if="o.discount_kobo" class="flex justify-between">
                   <dt class="muted">Discount</dt>
-                  <dd class="tabular-nums">−{{ naira(o.discount_kobo) }}</dd>
+                  <dd class="tabular-nums">−{{ money(o.discount_kobo, cur) }}</dd>
                 </div>
                 <div
                   class="flex justify-between border-t border-[var(--line)] pt-2 text-[15px] font-semibold"
                 >
                   <dt>Total</dt>
-                  <dd class="tabular-nums">{{ naira(o.total_kobo) }}</dd>
+                  <dd class="tabular-nums">{{ money(o.total_kobo, cur) }}</dd>
                 </div>
               </dl>
             </section>
@@ -500,7 +502,7 @@ const addrLines = computed(() => {
                 <li v-for="t in d.timeline" :key="t.id" class="flex gap-3">
                   <span class="tl-dot"></span>
                   <div>
-                    <p class="text-[13.5px] text-[var(--ink)]">{{ describeTimeline(t) }}</p>
+                    <p class="text-[13.5px] text-[var(--ink)]">{{ describeTimeline(t, cur) }}</p>
                     <p class="cell-sub">{{ fmtDate(t.created_at) }}</p>
                   </div>
                 </li>
@@ -588,7 +590,7 @@ const addrLines = computed(() => {
                     </p>
                   </div>
                   <div class="text-right">
-                    <p class="text-[13.5px] font-medium tabular-nums">{{ naira(p.amount_kobo) }}</p>
+                    <p class="text-[13.5px] font-medium tabular-nums">{{ money(p.amount_kobo, cur) }}</p>
                     <span :class="pill(paymentTone(p.status))">{{ p.status }}</span>
                   </div>
                 </li>
@@ -748,7 +750,7 @@ const addrLines = computed(() => {
       <template v-else-if="dlg === 'payment'">
 
         <p class="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
-          Confirms the full {{ naira(o?.total_kobo) }} was received.
+          Confirms the full {{ money(o?.total_kobo, cur) }} was received.
         </p>
 
         <label class="block space-y-2">
@@ -798,7 +800,7 @@ const addrLines = computed(() => {
 
         <label class="block space-y-2">
           <span class="text-sm font-medium text-slate-700">
-            Amount in ₦ (leave blank for the full {{ naira(o?.total_kobo) }})
+            Amount in {{ cur }} (leave blank for the full {{ money(o?.total_kobo, cur) }})
           </span>
 
           <input

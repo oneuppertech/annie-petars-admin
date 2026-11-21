@@ -1,18 +1,31 @@
 import type { OrderStatus, TimelineEntry } from '@/types/orders'
-
-export const naira = (kobo: number | string | null | undefined, decimals = 2) =>
+export const money = (
+  minor: number | string | null | undefined,
+  cur: string | null | undefined = 'NGN',
+  decimals = 2
+) =>
   new Intl.NumberFormat('en-NG', {
     style: 'currency',
-    currency: 'NGN',
+    currency: cur || 'NGN',
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
-  }).format((Number(kobo) || 0) / 100)
+  }).format((Number(minor) || 0) / 100)
+
+export const naira = (kobo: number | string | null | undefined, decimals = 2) =>
+  money(kobo, 'NGN', decimals)
 
 export const compactNaira = (kobo: number) =>
-  '₦' + new Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format((Number(kobo) || 0) / 100)
+  '₦' +
+  new Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(
+    (Number(kobo) || 0) / 100
+  )
 
 export const initials = (n: string) =>
-  (n || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('')
+  (n || '?')
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join('')
 
 export function relTime(iso: string, nowMs = Date.now()) {
   const diff = (Date.parse(iso) - nowMs) / 1000
@@ -52,14 +65,15 @@ export const STATUS_OPTIONS = (Object.keys(STATUS_META) as OrderStatus[]).map((v
 export const statusMeta = (s: string) => STATUS_META[s as OrderStatus] ?? { label: s, tone: 'grey' }
 
 export const paymentTone = (s: string) =>
-  ({ paid: 'green', unpaid: 'amber', pending: 'amber', failed: 'red', refunded: 'red' })[s] ?? 'grey'
+  ({ paid: 'green', unpaid: 'amber', pending: 'amber', failed: 'red', refunded: 'red' })[s] ??
+  'grey'
 
 export const pill = (tone: string) => `pill pill-${tone}`
 
 export const humanize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 
 /** One-line description of an audit-log entry for the timeline. */
-export function describeTimeline(t: TimelineEntry): string {
+export function describeTimeline(t: TimelineEntry, cur = 'NGN'): string {
   const m = t.metadata || {}
   switch (t.action) {
     case 'order.create':

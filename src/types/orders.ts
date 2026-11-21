@@ -41,6 +41,7 @@ export interface OrderListParams extends Partial<OrderFilters> {
   min_total?: number
   max_total?: number
     delivery_method?: 'delivery' | 'pickup'
+    currency?: string
 }
 
 export interface OrderListItem {
