@@ -144,7 +144,7 @@ const statusColor = { active: 'success', draft: 'warning', archived: 'grey' }
               </div>
             </td>
             <td class="p-3">{{ r.collection_name || '—' }}</td>
-            <td class="p-3">{{ formatNaira(r.price_kobo) }}</td>
+           <td class="p-3">{{ formatMoney(r.price_kobo, r.currency) }}</td>
             <td class="p-3">
               <span :class="r.variant_count && r.total_stock <= 0 ? 'font-semibold text-red-600' : ''">
                 {{ r.variant_count ? r.total_stock : '—' }}

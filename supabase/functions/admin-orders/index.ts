@@ -60,6 +60,16 @@ const safeSearch = (s: string, max: number) =>
     .trim()
     .slice(0, max)
 
+    /** "Ada Obi-Nwosu" -> "ada-obi-nwosu" (ASCII-safe for filenames) */
+const slug = (s: string, max = 40) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, max)
+    .replace(/-+$/g, '')
 async function loadDetail(db: Any, id: string) {
   const { data: order, error } = await db
     .from('orders')
@@ -349,6 +359,9 @@ async function loadInvoice(db: Any, id: string) {
     .filter((t: Any) => ['order.refunded', 'order.partial_refund'].includes(t.action))
     .reduce((sum: number, t: Any) => sum + Number(t.metadata?.amount_kobo ?? 0), 0)
 
+    const customerName =
+    detail.order.customer?.full_name ?? detail.order.shipping_address?.recipient_name ?? ''
+
   return {
     ...detail,
     timeline,
@@ -356,8 +369,9 @@ async function loadInvoice(db: Any, id: string) {
     business,
     logo_data_url: await logoDataUrl(logoUrl),
     generated_at: new Date().toISOString(),
-    filename: `invoice-${detail.order.order_number}.pdf`
+    filename: `invoice-${detail.order.order_number}-${slug(customerName) || 'guest'}.pdf`
   }
+
 }
 /* ---------- handler ---------- */
 

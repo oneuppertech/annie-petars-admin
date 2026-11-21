@@ -764,7 +764,7 @@ const chartOptions = computed(() => ({
             <button class="link" @click="go(ROUTES.messages)">View all</button>
           </div>
           <ul class="divide-y divide-[var(--line)]">
-            <li v-for="m in data.messages.recent" :key="m.id" class="flex items-center gap-3 py-3">
+            <li v-for="m in data.messages.recent.slice(0, 4)" :key="m.id" class="flex items-center gap-3 py-3">
               <span class="avatar">{{ initials(m.name) }}</span>
               <div class="min-w-0 flex-1">
                 <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ m.name }}</p>
