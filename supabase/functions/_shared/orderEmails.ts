@@ -35,6 +35,7 @@ export interface OrderEmailData {
   shippingProvider?: string | null
   trackUrl?: string | null // your tracking page, if any
   reason?: string | null // shown on cancelled / returned
+  currency: string
 }
 
 /* ---------- Theme (matches the shop) ---------- */

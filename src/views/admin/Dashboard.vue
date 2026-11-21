@@ -40,8 +40,11 @@ interface OrderRow {
   total_kobo: number
   placed_at: string
   customers?: { id: string; full_name: string } | null
+  currency: string
 }
 interface Overview {
+  currency: string
+  currencies: string[]
   role: string
   generated_at: string
   orders?: {
@@ -67,11 +70,25 @@ interface Overview {
   customers?: { total: number }
   custom_requests?: {
     new: number
-    recent: { id: string; request_number: string; name: string; outfit_type: string; status: string; created_at: string }[]
+    recent: {
+      id: string
+      request_number: string
+      name: string
+      outfit_type: string
+      status: string
+      created_at: string
+    }[]
   }
   messages?: {
     new: number
-    recent: { id: string; name: string; email: string; enquiry_type: string; status: string; created_at: string }[]
+    recent: {
+      id: string
+      name: string
+      email: string
+      enquiry_type: string
+      status: string
+      created_at: string
+    }[]
   }
   subscribers?: { subscribed: number }
 }
@@ -99,20 +116,24 @@ let clock: ReturnType<typeof setInterval> | null = null
 /* ------------------------------------------------------------------ */
 /* Formatting                                                          */
 /* ------------------------------------------------------------------ */
-const naira = (kobo: number, decimals = 0) =>
+const cur = ref('') // empty = let the server pick a default
+const C = computed(() => data.value?.currency || 'NGN')
+
+const naira = (kobo: number, decimals = 0, c = C.value) =>
   new Intl.NumberFormat('en-NG', {
     style: 'currency',
-    currency: 'NGN',
+    currency: c,
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   }).format((Number(kobo) || 0) / 100)
 
-const compactNaira = (kobo: number) =>
-  '₦' +
-  new Intl.NumberFormat('en-NG', { notation: 'compact', maximumFractionDigits: 1 }).format(
-    (Number(kobo) || 0) / 100
-  )
-
+const compactNaira = (kobo: number, c = C.value) =>
+  new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: c,
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format((Number(kobo) || 0) / 100)
 const shortDate = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 
@@ -140,7 +161,12 @@ const greeting = computed(() => {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 })
 const todayLabel = computed(() =>
-  new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  new Date().toLocaleDateString('en-NG', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  })
 )
 const updatedLabel = computed(() =>
   lastUpdated.value ? `Updated ${relTime(lastUpdated.value.toISOString())}` : ''
@@ -308,8 +334,7 @@ const pts = computed(() =>
   series.value.map((d, i) => ({
     d,
     x:
-      PAD.l +
-      (series.value.length > 1 ? i / (series.value.length - 1) : 0.5) * (W - PAD.l - PAD.r),
+      PAD.l + (series.value.length > 1 ? i / (series.value.length - 1) : 0.5) * (W - PAD.l - PAD.r),
     y: PAD.t + (1 - d.revenue_kobo / maxY.value) * (H - PAD.t - PAD.b)
   }))
 )
@@ -330,8 +355,12 @@ const areaPath = computed(() => {
   return `${linePath.value} L${p[p.length - 1].x},${H - PAD.b} L${p[0].x},${H - PAD.b} Z`
 })
 const gridY = computed(() => [0, 0.25, 0.5, 0.75, 1].map((r) => PAD.t + r * (H - PAD.t - PAD.b)))
-const xLabels = computed(() => pts.value.filter((_, i) => i % 7 === 0 || i === pts.value.length - 1))
-const hoverPoint = computed(() => (hovered.value === null ? null : pts.value[hovered.value] ?? null))
+const xLabels = computed(() =>
+  pts.value.filter((_, i) => i % 7 === 0 || i === pts.value.length - 1)
+)
+const hoverPoint = computed(() =>
+  hovered.value === null ? null : (pts.value[hovered.value] ?? null)
+)
 
 function onChartMove(e: MouseEvent) {
   const el = e.currentTarget as SVGElement
@@ -373,7 +402,9 @@ const topMax = computed(() =>
 
 const hasAnySection = computed(() => {
   const d = data.value
-  return !!d && !!(d.orders || d.sales || d.catalog || d.customers || d.custom_requests || d.messages)
+  return (
+    !!d && !!(d.orders || d.sales || d.catalog || d.customers || d.custom_requests || d.messages)
+  )
 })
 
 /* ------------------------------------------------------------------ */
@@ -401,7 +432,10 @@ async function load(manual = false) {
   if (manual) refreshing.value = true
   const first = !data.value
   try {
-    const d = await ApiService.get<Overview>(ENDPOINT, { params: { resource: 'overview' } })
+    const d = await ApiService.get<Overview>(ENDPOINT, {
+      params: { resource: 'overview', ...(cur.value ? { currency: cur.value } : {}) }
+    })
+    if (!cur.value) cur.value = d.currency
     error.value = ''
     applyData(d, first || manual)
   } catch (e: any) {
@@ -519,295 +553,446 @@ const chartOptions = computed(() => ({
     }
   }
 }))
+function setCur(c: string) {
+  cur.value = c
+  load(true)
+}
 </script>
 
 <template>
-    <MainLayout>
-         <div class="dash p-4">
-    <!-- Header -->
-    <header class="mb-7 flex flex-wrap items-end justify-between gap-4" data-aos="fade-down">
-      <div>
-        <h1 class="title">{{ greeting }}</h1>
-        <p class="muted mt-1">{{ todayLabel }}</p>
+  <MainLayout>
+    <div class="dash p-4">
+      <!-- Header -->
+      <header class="mb-7 flex flex-wrap items-end justify-between gap-4" data-aos="fade-down">
+        <div>
+          <h1 class="title">{{ greeting }}</h1>
+          <p class="muted mt-1">{{ todayLabel }}</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button class="btn-ghost" :disabled="refreshing" @click="load(true)">
+            <svg
+              class="h-4 w-4"
+              :class="{ 'animate-spin': refreshing }"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path :d="icons.refresh" />
+            </svg>
+            <span>{{ refreshing ? 'Refreshing' : updatedLabel || 'Refresh' }}</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Loading skeleton -->
+      <div v-if="loading && !data" class="space-y-6">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div v-for="n in 4" :key="n" class="card skeleton h-[148px]"></div>
+        </div>
+        <div class="grid gap-6 lg:grid-cols-3">
+          <div class="card skeleton h-[340px] lg:col-span-2"></div>
+          <div class="card skeleton h-[340px]"></div>
+        </div>
+        <div class="card skeleton h-[300px]"></div>
       </div>
-      <button class="btn-ghost" :disabled="refreshing" @click="load(true)">
-        <svg
-          class="h-4 w-4"
-          :class="{ 'animate-spin': refreshing }"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path :d="icons.refresh" />
+
+      <!-- Error -->
+      <div
+        v-else-if="error && !data"
+        class="card mx-auto max-w-md p-8 text-center"
+        data-aos="zoom-in"
+      >
+        <div class="kpi-icon tone-red mx-auto mb-4">
+          <svg
+            class="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path :d="icons.alert" />
+          </svg>
+        </div>
+        <h2 class="text-base font-semibold text-[var(--ink)]">Couldn't load the dashboard</h2>
+        <p class="muted mt-1">{{ error }}</p>
+        <button class="btn-primary mt-5" @click="load(true)">Try again</button>
+      </div>
+
+      <!-- Content -->
+      <template v-else-if="data">
+        <div v-if="error" class="notice mb-5" data-aos="fade-in">{{ error }}</div>
+
+        <div v-if="!hasAnySection" class="card p-10 text-center muted" data-aos="fade-up">
+          There's nothing to show for your role yet.
+        </div>
+
+        <!-- KPIs -->
+        <section v-if="kpis.length" class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <div
+    v-for="(k, i) in kpis"
+    :key="k.key"
+    role="button"
+    tabindex="0"
+    class="card kpi text-left"
+    data-aos="fade-up"
+    :data-aos-delay="i * 80"
+    @click="go(k.to)"
+    @keydown.enter="go(k.to)"
+  >
+    <div class="flex items-start justify-between">
+      <div class="kpi-icon" :class="`tone-${k.tone}`">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path :d="icons[k.icon]" />
         </svg>
-        <span>{{ refreshing ? 'Refreshing' : updatedLabel || 'Refresh' }}</span>
-      </button>
-    </header>
-
-    <!-- Loading skeleton -->
-    <div v-if="loading && !data" class="space-y-6">
-      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div v-for="n in 4" :key="n" class="card skeleton h-[148px]"></div>
-      </div>
-      <div class="grid gap-6 lg:grid-cols-3">
-        <div class="card skeleton h-[340px] lg:col-span-2"></div>
-        <div class="card skeleton h-[340px]"></div>
-      </div>
-      <div class="card skeleton h-[300px]"></div>
-    </div>
-
-    <!-- Error -->
-    <div v-else-if="error && !data" class="card mx-auto max-w-md p-8 text-center" data-aos="zoom-in">
-      <div class="kpi-icon tone-red mx-auto mb-4">
-        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.alert" /></svg>
-      </div>
-      <h2 class="text-base font-semibold text-[var(--ink)]">Couldn't load the dashboard</h2>
-      <p class="muted mt-1">{{ error }}</p>
-      <button class="btn-primary mt-5" @click="load(true)">Try again</button>
-    </div>
-
-    <!-- Content -->
-    <template v-else-if="data">
-      <div v-if="error" class="notice mb-5" data-aos="fade-in">{{ error }}</div>
-
-      <div v-if="!hasAnySection" class="card p-10 text-center muted" data-aos="fade-up">
-        There's nothing to show for your role yet.
       </div>
 
-      <!-- KPIs -->
-      <section v-if="kpis.length" class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <button
-          v-for="(k, i) in kpis"
-          :key="k.key"
-          class="card kpi text-left"
-          data-aos="fade-up"
-          :data-aos-delay="i * 80"
-          @click="go(k.to)"
+      <div
+        v-if="k.key === 'revenue' && (data.currencies?.length ?? 0) > 1"
+        @click.stop
+        @keydown.stop
+      >
+        <el-select
+          v-model="cur"
+          class="currency-select"
+          :disabled="refreshing"
+          @change="load(true)"
         >
-          <div class="flex items-start justify-between">
-            <div class="kpi-icon" :class="`tone-${k.tone}`">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons[k.icon]" /></svg>
-            </div>
-            <svg class="kpi-arrow h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.arrow" /></svg>
-          </div>
-          <p class="kpi-label">{{ k.label }}</p>
-          <p class="kpi-value">{{ k.value }}</p>
-          <p class="kpi-sub">{{ k.sub }}</p>
-        </button>
-      </section>
+          <el-option v-for="c in data.currencies" :key="c" :label="c" :value="c" />
+        </el-select>
+      </div>
 
-      <!-- Chart + pipeline -->
-      <section v-if="data.sales || data.orders" class="mb-6 grid gap-6 lg:grid-cols-3">
-        <div v-if="data.sales" class="card p-6 lg:col-span-2" data-aos="fade-up" data-aos-delay="100">
-          <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 class="card-title">Revenue</h2>
-              <p class="muted">Paid orders, last 30 days</p>
-            </div>
-            <div class="flex gap-6 text-right">
-              <div>
-                <p class="stat-label">Orders</p>
-                <p class="stat-value">{{ data.sales.last_30_days.orders }}</p>
-              </div>
-              <div>
-                <p class="stat-label">Avg. order</p>
-                <p class="stat-value">{{ naira(data.sales.last_30_days.avg_order_kobo) }}</p>
-              </div>
-            </div>
-          </div>
+      <svg v-else class="kpi-arrow h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path :d="icons.arrow" />
+      </svg>
+    </div>
 
-         <apexchart type="area" height="230" :options="chartOptions" :series="chartSeries" />
-        </div>
-
-        <div v-if="data.orders" class="card p-6" data-aos="fade-up" data-aos-delay="180">
-          <div class="mb-5 flex items-center justify-between">
-            <div>
-              <h2 class="card-title">Order pipeline</h2>
-              <p class="muted">{{ pipeline.total }} orders total</p>
-            </div>
-          </div>
-          <ul class="space-y-3.5">
-            <li v-for="r in pipeline.rows" :key="r.key">
-              <div class="mb-1.5 flex items-center justify-between text-[13px]">
-                <span class="capitalize text-[var(--ink)]">{{ label(r.key) }}</span>
-                <span class="font-medium tabular-nums text-[var(--ink)]">{{ r.count }}</span>
-              </div>
-              <div class="bar-track">
-                <div
-                  class="bar-fill"
-                  :style="{ width: barsReady ? `${Math.max(r.pct, r.count ? 4 : 0)}%` : '0%', background: r.color }"
-                ></div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- Recent orders + top products -->
-      <section v-if="data.orders || data.sales?.top_products?.length" class="mb-6 grid gap-6 lg:grid-cols-3">
-        <div v-if="data.orders" class="card overflow-hidden lg:col-span-2" data-aos="fade-up">
-          <div class="flex items-center justify-between px-6 pt-6 pb-4">
-            <div>
-              <h2 class="card-title">Recent orders</h2>
-              <p class="muted">Latest activity across the store</p>
-            </div>
-            <button class="link" @click="go(ROUTES.orders)">View all</button>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full min-w-[640px] text-left">
-              <thead>
-                <tr>
-                  <th class="th pl-6">Order</th>
-                  <th class="th">Customer</th>
-                  <th class="th">Total</th>
-                  <th class="th">Payment</th>
-                  <th class="th">Status</th>
-                  <th class="th pr-6 text-right">Placed</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(o, i) in data.orders.recent"
-                  :key="o.id"
-                  class="row"
-                  data-aos="fade-up"
-                  :data-aos-delay="i * 50"
-                  @click="go(ROUTES.order(o.id))"
-                >
-                  <td class="td pl-6">
-                    <p class="font-medium text-[var(--ink)]">{{ o.order_number }}</p>
-                    <p class="cell-sub">{{ o.email }}</p>
-                  </td>
-                  <td class="td">
-                    <div class="flex items-center gap-2.5">
-                      <span class="avatar">{{ initials(o.customers?.full_name || o.email) }}</span>
-                      <span class="text-[var(--ink)]">{{ o.customers?.full_name || 'Guest' }}</span>
-                    </div>
-                  </td>
-                  <td class="td font-medium tabular-nums text-[var(--ink)]">{{ naira(o.total_kobo, 2) }}</td>
-                  <td class="td"><span :class="pill(PAYMENT_TONE, o.payment_status)">{{ label(o.payment_status) }}</span></td>
-                  <td class="td"><span :class="pill(ORDER_TONE, o.status)">{{ label(o.status) }}</span></td>
-                  <td class="td pr-6 text-right cell-sub">{{ relTime(o.placed_at) }}</td>
-                </tr>
-                <tr v-if="!data.orders.recent.length">
-                  <td colspan="6" class="td py-10 text-center muted">No orders yet</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card p-6" data-aos="fade-up" data-aos-delay="100">
-          <div class="mb-5">
-            <h2 class="card-title">Top products</h2>
-            <p class="muted">By revenue, last 30 days</p>
-          </div>
-          <ul class="space-y-4">
-            <li v-for="(p, i) in data.sales.top_products" :key="p.product_id ?? p.name">
-              <div class="flex items-center gap-3">
-                <span class="rank">{{ i + 1 }}</span>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ p.name }}</p>
-                  <p class="cell-sub">{{ p.units }} unit{{ p.units === 1 ? '' : 's' }}</p>
-                </div>
-                <p class="text-[13px] font-semibold tabular-nums text-[var(--ink)]">{{ compactNaira(p.revenue_kobo) }}</p>
-              </div>
-              <div class="bar-track mt-2 ml-9">
-                <div class="bar-fill" :style="{ width: barsReady ? `${(p.revenue_kobo / topMax) * 100}%` : '0%', background: 'linear-gradient(90deg,#F0A27D,#D4663F)' }"></div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- Bottom row -->
-      <section class="grid gap-6 lg:grid-cols-3">
-        <div v-if="data.custom_requests" class="card p-6" data-aos="fade-up">
-          <div class="mb-4 flex items-start justify-between">
-            <div class="flex items-center gap-3">
-              <div class="kpi-icon tone-peach sm">
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.ruler" /></svg>
-              </div>
-              <div>
-                <h2 class="card-title">Custom requests</h2>
-                <p class="muted">{{ data.custom_requests.new }} new</p>
-              </div>
-            </div>
-            <button class="link" @click="go(ROUTES.customRequests)">View all</button>
-          </div>
-          <ul class="divide-y divide-[var(--line)]">
-            <li v-for="r in data.custom_requests.recent.slice(0, 4)" :key="r.id" class="flex items-center justify-between gap-3 py-3">
-              <div class="min-w-0">
-                <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ r.name }}</p>
-                <p class="cell-sub truncate">{{ r.outfit_type }} · {{ relTime(r.created_at) }}</p>
-              </div>
-              <span :class="pill(REQUEST_TONE, r.status)">{{ label(r.status) }}</span>
-            </li>
-            <li v-if="!data.custom_requests.recent.length" class="py-8 text-center muted">No requests yet</li>
-          </ul>
-        </div>
-
-        <div v-if="data.messages" class="card p-6" data-aos="fade-up" data-aos-delay="100">
-          <div class="mb-4 flex items-start justify-between">
-            <div class="flex items-center gap-3">
-              <div class="kpi-icon tone-peach sm">
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.mail" /></svg>
-              </div>
-              <div>
-                <h2 class="card-title">Messages</h2>
-                <p class="muted">{{ data.messages.new }} unread</p>
-              </div>
-            </div>
-            <button class="link" @click="go(ROUTES.messages)">View all</button>
-          </div>
-          <ul class="divide-y divide-[var(--line)]">
-            <li v-for="m in data.messages.recent.slice(0, 4)" :key="m.id" class="flex items-center gap-3 py-3">
-              <span class="avatar">{{ initials(m.name) }}</span>
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ m.name }}</p>
-                <p class="cell-sub truncate">{{ m.enquiry_type }} · {{ relTime(m.created_at) }}</p>
-              </div>
-              <span v-if="m.status === 'new'" class="dot"></span>
-            </li>
-            <li v-if="!data.messages.recent.length" class="py-8 text-center muted">Inbox is clear</li>
-          </ul>
-        </div>
-
-        <div class="card p-6" data-aos="fade-up" data-aos-delay="200">
-          <h2 class="card-title mb-4">Store snapshot</h2>
-          <div class="grid grid-cols-2 gap-3">
-            <div v-if="data.customers" class="snap">
-              <svg class="snap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.users" /></svg>
-              <p class="snap-val">{{ data.customers.total }}</p>
-              <p class="snap-label">Customers</p>
-            </div>
-            <div v-if="data.subscribers" class="snap">
-              <svg class="snap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.mail" /></svg>
-              <p class="snap-val">{{ data.subscribers.subscribed }}</p>
-              <p class="snap-label">Subscribers</p>
-            </div>
-            <template v-if="data.catalog">
-              <div class="snap">
-                <svg class="snap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.package" /></svg>
-                <p class="snap-val">{{ data.catalog.products.active }}</p>
-                <p class="snap-label">Active products</p>
-              </div>
-              <div class="snap">
-                <svg class="snap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path :d="icons.trend" /></svg>
-                <p class="snap-val">{{ data.catalog.products.draft }}</p>
-                <p class="snap-label">Drafts</p>
-              </div>
-            </template>
-          </div>
-        </div>
-      </section>
-    </template>
+    <p class="kpi-label">{{ k.label }}</p>
+    <p class="kpi-value">{{ k.value }}</p>
+    <p class="kpi-sub">{{ k.sub }}</p>
   </div>
-    </MainLayout>
- 
+</section>
+
+        <!-- Chart + pipeline -->
+        <section v-if="data.sales || data.orders" class="mb-6 grid gap-6 lg:grid-cols-3">
+          <div
+            v-if="data.sales"
+            class="card p-6 lg:col-span-2"
+            data-aos="fade-up"
+            data-aos-delay="100"
+          >
+            <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 class="card-title">Revenue</h2>
+                <p class="muted">Paid orders, last 30 days</p>
+              </div>
+              <div class="flex gap-6 text-right">
+                <div>
+                  <p class="stat-label">Orders</p>
+                  <p class="stat-value">{{ data.sales.last_30_days.orders }}</p>
+                </div>
+                <div>
+                  <p class="stat-label">Avg. order</p>
+                  <p class="stat-value">{{ naira(data.sales.last_30_days.avg_order_kobo) }}</p>
+                </div>
+              </div>
+            </div>
+
+            <apexchart type="area" height="230" :options="chartOptions" :series="chartSeries" />
+          </div>
+
+          <div v-if="data.orders" class="card p-6" data-aos="fade-up" data-aos-delay="180">
+            <div class="mb-5 flex items-center justify-between">
+              <div>
+                <h2 class="card-title">Order pipeline</h2>
+                <p class="muted">{{ pipeline.total }} orders total</p>
+              </div>
+            </div>
+            <ul class="space-y-3.5">
+              <li v-for="r in pipeline.rows" :key="r.key">
+                <div class="mb-1.5 flex items-center justify-between text-[13px]">
+                  <span class="capitalize text-[var(--ink)]">{{ label(r.key) }}</span>
+                  <span class="font-medium tabular-nums text-[var(--ink)]">{{ r.count }}</span>
+                </div>
+                <div class="bar-track">
+                  <div
+                    class="bar-fill"
+                    :style="{
+                      width: barsReady ? `${Math.max(r.pct, r.count ? 4 : 0)}%` : '0%',
+                      background: r.color
+                    }"
+                  ></div>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- Recent orders + top products -->
+        <section
+          v-if="data.orders || data.sales?.top_products?.length"
+          class="mb-6 grid gap-6 lg:grid-cols-3"
+        >
+          <div v-if="data.orders" class="card overflow-hidden lg:col-span-2" data-aos="fade-up">
+            <div class="flex items-center justify-between px-6 pt-6 pb-4">
+              <div>
+                <h2 class="card-title">Recent orders</h2>
+                <p class="muted">Latest activity across the store</p>
+              </div>
+              <button class="link" @click="go(ROUTES.orders)">View all</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[640px] text-left">
+                <thead>
+                  <tr>
+                    <th class="th pl-6">Order</th>
+                    <th class="th">Customer</th>
+                    <th class="th">Total</th>
+                    <th class="th">Payment</th>
+                    <th class="th">Status</th>
+                    <th class="th pr-6 text-right">Placed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(o, i) in data.orders.recent"
+                    :key="o.id"
+                    class="row"
+                    data-aos="fade-up"
+                    :data-aos-delay="i * 50"
+                    @click="go(ROUTES.order(o.id))"
+                  >
+                    <td class="td pl-6">
+                      <p class="font-medium text-[var(--ink)]">{{ o.order_number }}</p>
+                      <p class="cell-sub">{{ o.email }}</p>
+                    </td>
+                    <td class="td">
+                      <div class="flex items-center gap-2.5">
+                        <span class="avatar">{{
+                          initials(o.customers?.full_name || o.email)
+                        }}</span>
+                        <span class="text-[var(--ink)]">{{
+                          o.customers?.full_name || 'Guest'
+                        }}</span>
+                      </div>
+                    </td>
+                    <td class="td font-medium tabular-nums text-[var(--ink)]">
+                      {{ naira(o.total_kobo, 2, o.currency) }}
+                    </td>
+                    <td class="td">
+                      <span :class="pill(PAYMENT_TONE, o.payment_status)">{{
+                        label(o.payment_status)
+                      }}</span>
+                    </td>
+                    <td class="td">
+                      <span :class="pill(ORDER_TONE, o.status)">{{ label(o.status) }}</span>
+                    </td>
+                    <td class="td pr-6 text-right cell-sub">{{ relTime(o.placed_at) }}</td>
+                  </tr>
+                  <tr v-if="!data.orders.recent.length">
+                    <td colspan="6" class="td py-10 text-center muted">No orders yet</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card p-6" data-aos="fade-up" data-aos-delay="100">
+            <div class="mb-5">
+              <h2 class="card-title">Top products</h2>
+              <p class="muted">By revenue, last 30 days</p>
+            </div>
+            <ul class="space-y-4">
+              <li v-for="(p, i) in data.sales.top_products" :key="p.product_id ?? p.name">
+                <div class="flex items-center gap-3">
+                  <span class="rank">{{ i + 1 }}</span>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ p.name }}</p>
+                    <p class="cell-sub">{{ p.units }} unit{{ p.units === 1 ? '' : 's' }}</p>
+                  </div>
+                  <p class="text-[13px] font-semibold tabular-nums text-[var(--ink)]">
+                    {{ compactNaira(p.revenue_kobo) }}
+                  </p>
+                </div>
+                <div class="bar-track mt-2 ml-9">
+                  <div
+                    class="bar-fill"
+                    :style="{
+                      width: barsReady ? `${(p.revenue_kobo / topMax) * 100}%` : '0%',
+                      background: 'linear-gradient(90deg,#F0A27D,#D4663F)'
+                    }"
+                  ></div>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- Bottom row -->
+        <section class="grid gap-6 lg:grid-cols-3">
+          <div v-if="data.custom_requests" class="card p-6" data-aos="fade-up">
+            <div class="mb-4 flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="kpi-icon tone-peach sm">
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path :d="icons.ruler" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 class="card-title">Custom requests</h2>
+                  <p class="muted">{{ data.custom_requests.new }} new</p>
+                </div>
+              </div>
+              <button class="link" @click="go(ROUTES.customRequests)">View all</button>
+            </div>
+            <ul class="divide-y divide-[var(--line)]">
+              <li
+                v-for="r in data.custom_requests.recent.slice(0, 4)"
+                :key="r.id"
+                class="flex items-center justify-between gap-3 py-3"
+              >
+                <div class="min-w-0">
+                  <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ r.name }}</p>
+                  <p class="cell-sub truncate">{{ r.outfit_type }} · {{ relTime(r.created_at) }}</p>
+                </div>
+                <span :class="pill(REQUEST_TONE, r.status)">{{ label(r.status) }}</span>
+              </li>
+              <li v-if="!data.custom_requests.recent.length" class="py-8 text-center muted">
+                No requests yet
+              </li>
+            </ul>
+          </div>
+
+          <div v-if="data.messages" class="card p-6" data-aos="fade-up" data-aos-delay="100">
+            <div class="mb-4 flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="kpi-icon tone-peach sm">
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path :d="icons.mail" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 class="card-title">Messages</h2>
+                  <p class="muted">{{ data.messages.new }} unread</p>
+                </div>
+              </div>
+              <button class="link" @click="go(ROUTES.messages)">View all</button>
+            </div>
+            <ul class="divide-y divide-[var(--line)]">
+              <li
+                v-for="m in data.messages.recent.slice(0, 4)"
+                :key="m.id"
+                class="flex items-center gap-3 py-3"
+              >
+                <span class="avatar">{{ initials(m.name) }}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-[14px] font-medium text-[var(--ink)]">{{ m.name }}</p>
+                  <p class="cell-sub truncate">
+                    {{ m.enquiry_type }} · {{ relTime(m.created_at) }}
+                  </p>
+                </div>
+                <span v-if="m.status === 'new'" class="dot"></span>
+              </li>
+              <li v-if="!data.messages.recent.length" class="py-8 text-center muted">
+                Inbox is clear
+              </li>
+            </ul>
+          </div>
+
+          <div class="card p-6" data-aos="fade-up" data-aos-delay="200">
+            <h2 class="card-title mb-4">Store snapshot</h2>
+            <div class="grid grid-cols-2 gap-3">
+              <div v-if="data.customers" class="snap">
+                <svg
+                  class="snap-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path :d="icons.users" />
+                </svg>
+                <p class="snap-val">{{ data.customers.total }}</p>
+                <p class="snap-label">Customers</p>
+              </div>
+              <div v-if="data.subscribers" class="snap">
+                <svg
+                  class="snap-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path :d="icons.mail" />
+                </svg>
+                <p class="snap-val">{{ data.subscribers.subscribed }}</p>
+                <p class="snap-label">Subscribers</p>
+              </div>
+              <template v-if="data.catalog">
+                <div class="snap">
+                  <svg
+                    class="snap-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path :d="icons.package" />
+                  </svg>
+                  <p class="snap-val">{{ data.catalog.products.active }}</p>
+                  <p class="snap-label">Active products</p>
+                </div>
+                <div class="snap">
+                  <svg
+                    class="snap-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path :d="icons.trend" />
+                  </svg>
+                  <p class="snap-val">{{ data.catalog.products.draft }}</p>
+                  <p class="snap-label">Drafts</p>
+                </div>
+              </template>
+            </div>
+          </div>
+        </section>
+      </template>
+    </div>
+  </MainLayout>
 </template>
 
 <style scoped>
@@ -868,7 +1053,9 @@ const chartOptions = computed(() => ({
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(43, 34, 38, 0.03), 0 8px 24px -16px rgba(200, 102, 63, 0.18);
+  box-shadow:
+    0 1px 2px rgba(43, 34, 38, 0.03),
+    0 8px 24px -16px rgba(200, 102, 63, 0.18);
 }
 .notice {
   background: var(--amber-bg);
@@ -889,7 +1076,9 @@ const chartOptions = computed(() => ({
   padding: 11px 22px;
   border-radius: 4px;
   box-shadow: 0 6px 16px -6px rgba(232, 133, 93, 0.6);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 .btn-primary:hover {
   transform: translateY(-1px);
@@ -904,7 +1093,9 @@ const chartOptions = computed(() => ({
   background: var(--peach);
   padding: 9px 14px;
   border-radius: 10px;
-  transition: background 0.2s, transform 0.2s;
+  transition:
+    background 0.2s,
+    transform 0.2s;
 }
 .btn-ghost:hover:not(:disabled) {
   background: #fbe3d6;
@@ -941,7 +1132,10 @@ const chartOptions = computed(() => ({
 .kpi {
   padding: 20px;
   cursor: pointer;
-  transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+  transition:
+    transform 0.25s,
+    box-shadow 0.25s,
+    border-color 0.25s;
 }
 .kpi:hover {
   transform: translateY(-3px);
@@ -950,7 +1144,9 @@ const chartOptions = computed(() => ({
 }
 .kpi-arrow {
   color: #cbbfc4;
-  transition: transform 0.25s, color 0.25s;
+  transition:
+    transform 0.25s,
+    color 0.25s;
 }
 .kpi:hover .kpi-arrow {
   color: var(--primary);
@@ -1198,7 +1394,9 @@ const chartOptions = computed(() => ({
   border-radius: 12px;
   background: #fdf8f6;
   border: 1px solid #f6e9e2;
-  transition: transform 0.25s, background 0.25s;
+  transition:
+    transform 0.25s,
+    background 0.25s;
 }
 .snap:hover {
   transform: translateY(-2px);
@@ -1252,5 +1450,21 @@ const chartOptions = computed(() => ({
   .snap {
     transition: none;
   }
+}
+.currency-select {
+  width: 110px;
+}
+.currency-select :deep(.el-select__wrapper) {
+  border-radius: 10px;
+  box-shadow: none;
+  min-height: 36px;
+}
+.currency-select :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--primary-2) inset;
+}
+.currency-select :deep(.el-select__selected-item) {
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 13px;
 }
 </style>

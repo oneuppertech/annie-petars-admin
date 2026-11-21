@@ -68,6 +68,31 @@ const REQUEST_COLS =
   'id,request_number,customer_id,name,email,phone,country,outfit_type,garment_type,needed_by,event_date,quantity,status,quote_kobo,agreed_timeline,created_at,updated_at'
 
 /* ---------- helpers ---------- */
+async function resolveCurrency(db: DB, wanted: string | null) {
+  const [paid, prods] = await Promise.all([
+    db
+      .from('orders')
+      .select('currency,total_kobo')
+      .eq('payment_status', 'paid')
+      .not('status', 'in', '(cancelled,refunded)')
+      .limit(10000),
+    db.from('products').select('currency').eq('status', 'active')
+  ])
+  check(paid.error)
+  check(prods.error)
+
+  const totals = new Map<string, number>()
+  for (const o of paid.data || [])
+    totals.set(o.currency, (totals.get(o.currency) || 0) + Number(o.total_kobo))
+  for (const p of prods.data || []) if (!totals.has(p.currency)) totals.set(p.currency, 0)
+
+  const list = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c as string)
+  const w = (wanted || '').toUpperCase()
+  return {
+    currency: list.includes(w) ? w : list[0] || 'NGN',
+    currencies: list.length ? list : ['NGN']
+  }
+}
 const uid = (v: unknown) => {
   if (typeof v !== 'string' || !UUID.test(v)) throw new HttpError(400, 'Invalid id')
   return v
@@ -149,10 +174,11 @@ async function count(q: Row) {
 }
 
 /* ---------- sales ---------- */
-async function salesSummary(db: DB, fromIso: string, toIso: string) {
+async function salesSummary(db: DB, fromIso: string, toIso: string, cur: string) {
   const { data, error } = await db
     .from('orders')
     .select('total_kobo,placed_at')
+    .eq('currency', cur)
     .eq('payment_status', 'paid')
     .not('status', 'in', '(cancelled,refunded)')
     .gte('placed_at', fromIso)
@@ -191,21 +217,30 @@ async function salesSummary(db: DB, fromIso: string, toIso: string) {
   }
 }
 
-async function topProducts(db: DB, fromIso: string, limit = 5) {
+async function topProducts(db: DB, fromIso: string, cur: string, limit = 5) {
   const { data, error } = await db
     .from('order_items')
     .select(
-      'product_id,product_name,quantity,line_total_kobo,orders!inner(payment_status,status,placed_at)'
+      'product_id,product_name,quantity,line_total_kobo,orders!inner(payment_status,status,placed_at,currency)'
     )
+    .eq('orders.currency', cur)
     .eq('orders.payment_status', 'paid')
     .not('orders.status', 'in', '(cancelled,refunded)')
     .gte('orders.placed_at', fromIso)
     .limit(5000)
   check(error)
-  const m = new Map<string, { product_id: string | null; name: string; units: number; revenue_kobo: number }>()
+  const m = new Map<
+    string,
+    { product_id: string | null; name: string; units: number; revenue_kobo: number }
+  >()
   for (const i of data || []) {
     const key = i.product_id ?? i.product_name
-    const e = m.get(key) ?? { product_id: i.product_id, name: i.product_name, units: 0, revenue_kobo: 0 }
+    const e = m.get(key) ?? {
+      product_id: i.product_id,
+      name: i.product_name,
+      units: 0,
+      revenue_kobo: 0
+    }
     e.units += Number(i.quantity)
     e.revenue_kobo += Number(i.line_total_kobo)
     m.set(key, e)
@@ -214,6 +249,7 @@ async function topProducts(db: DB, fromIso: string, limit = 5) {
 }
 
 async function sales(db: DB, sp: URLSearchParams) {
+  const { currency, currencies } = await resolveCurrency(db, sp.get('currency'))
   const now = Date.now()
   const to = dateParam(sp.get('to'), 'To date', true) ?? new Date(now).toISOString()
   const from =
@@ -221,12 +257,15 @@ async function sales(db: DB, sp: URLSearchParams) {
     new Date(startOfLagosDay(Date.parse(to)) - 29 * DAY).toISOString()
   if (Date.parse(to) - Date.parse(from) > 366 * DAY) throw new HttpError(400, 'Range is too large')
   if (Date.parse(from) > Date.parse(to)) throw new HttpError(400, 'From must be before To')
-  const [summary, top] = await Promise.all([salesSummary(db, from, to), topProducts(db, from, 10)])
-  return { from, to, ...summary, top_products: top }
+  const [summary, top] = await Promise.all([
+    salesSummary(db, from, to, currency),
+    topProducts(db, from, currency, 10)
+  ])
+  return { currency, currencies, from, to, ...summary, top_products: top }
 }
 
 /* ---------- overview ---------- */
-async function overview(db: DB, role: string) {
+async function overview(db: DB, role: string, wanted: string | null) {
   const out: Obj = { role, generated_at: new Date().toISOString() }
   const tasks: Promise<unknown>[] = []
 
@@ -258,14 +297,17 @@ async function overview(db: DB, role: string) {
   if (can(role, 'sales'))
     tasks.push(
       (async () => {
+        const { currency, currencies } = await resolveCurrency(db, wanted)
         const now = Date.now()
         const from = new Date(startOfLagosDay(now) - 29 * DAY).toISOString()
         const [s, top] = await Promise.all([
-          salesSummary(db, from, new Date(now).toISOString()),
-          topProducts(db, from)
+          salesSummary(db, from, new Date(now).toISOString(), currency),
+          topProducts(db, from, currency)
         ])
-        const last7 = s.series.slice(-7)
-        out.sales = {
+        out.currency = currency
+        out.currencies = currencies
+         const last7 = s.series.slice(-7)
+        out.sales = { 
           today: s.series[s.series.length - 1],
           last_7_days: {
             revenue_kobo: last7.reduce((n, d) => n + d.revenue_kobo, 0),
@@ -374,9 +416,11 @@ async function listOrders(db: DB, sp: URLSearchParams) {
   if (s) q = q.or(`order_number.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`)
   q = range(q, 'placed_at', sp)
 
-  const { data, count: total, error } = await q
-    .order('placed_at', { ascending: false })
-    .range(from, to)
+  const {
+    data,
+    count: total,
+    error
+  } = await q.order('placed_at', { ascending: false }).range(from, to)
   check(error)
   return {
     total: total ?? 0,
@@ -567,11 +611,16 @@ async function listCustomers(db: DB, sp: URLSearchParams) {
   const s = search(sp)
   if (s) q = q.or(`full_name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`)
   q = range(q, 'created_at', sp)
-  const { data, count: total, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to)
+  const {
+    data,
+    count: total,
+    error
+  } = await q.order('created_at', { ascending: false }).range(from, to)
   check(error)
-  const stats = await customerStats(db, (data || []).map((c: Row) => c.id))
+  const stats = await customerStats(
+    db,
+    (data || []).map((c: Row) => c.id)
+  )
   return {
     total: total ?? 0,
     page,
@@ -659,7 +708,11 @@ async function listPayments(db: DB, sp: URLSearchParams) {
   q = range(q, 'created_at', sp)
 
   // Summary honours the date range only, so the cards stay stable while filtering the table
-  const sumQ = range(db.from('payments').select('status,amount_kobo').limit(10000), 'created_at', sp)
+  const sumQ = range(
+    db.from('payments').select('status,amount_kobo').limit(10000),
+    'created_at',
+    sp
+  )
   const [list, sum] = await Promise.all([
     q.order('created_at', { ascending: false }).range(from, to),
     sumQ
@@ -714,9 +767,11 @@ async function listRequests(db: DB, sp: URLSearchParams) {
   const s = search(sp)
   if (s) q = q.or(`request_number.ilike.%${s}%,name.ilike.%${s}%,email.ilike.%${s}%`)
   q = range(q, 'created_at', sp)
-  const { data, count: total, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to)
+  const {
+    data,
+    count: total,
+    error
+  } = await q.order('created_at', { ascending: false }).range(from, to)
   check(error)
   return { total: total ?? 0, page, limit: size, requests: data || [] }
 }
@@ -768,9 +823,11 @@ async function listMessages(db: DB, sp: URLSearchParams) {
   const s = search(sp)
   if (s) q = q.or(`name.ilike.%${s}%,email.ilike.%${s}%,message.ilike.%${s}%`)
   q = range(q, 'created_at', sp)
-  const { data, count: total, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to)
+  const {
+    data,
+    count: total,
+    error
+  } = await q.order('created_at', { ascending: false }).range(from, to)
   check(error)
   return { total: total ?? 0, page, limit: size, messages: data || [] }
 }
@@ -807,9 +864,11 @@ async function listSubscribers(db: DB, sp: URLSearchParams) {
   }
   const s = search(sp)
   if (s) q = q.ilike('email', `%${s}%`)
-  const { data, count: total, error } = await q
-    .order('subscribed_at', { ascending: false })
-    .range(from, to)
+  const {
+    data,
+    count: total,
+    error
+  } = await q.order('subscribed_at', { ascending: false }).range(from, to)
   check(error)
   return { total: total ?? 0, page, limit: size, subscribers: data || [] }
 }
@@ -931,9 +990,11 @@ async function listAudit(db: DB, sp: URLSearchParams) {
   const actor = sp.get('actor')
   if (actor) q = q.eq('actor_user_id', uid(actor))
   q = range(q, 'created_at', sp)
-  const { data, count: total, error } = await q
-    .order('created_at', { ascending: false })
-    .range(from, to)
+  const {
+    data,
+    count: total,
+    error
+  } = await q.order('created_at', { ascending: false }).range(from, to)
   check(error)
   return { total: total ?? 0, page, limit: size, logs: data || [] }
 }
@@ -949,7 +1010,7 @@ Deno.serve(
       const sp = new URL(req.url).searchParams
       switch (sp.get('resource') || 'overview') {
         case 'overview':
-          return ok(await overview(db, role))
+  return ok(await overview(db, role, sp.get('currency')))
         case 'sales':
           need(role, 'sales')
           return ok(await sales(db, sp))

@@ -73,7 +73,27 @@ export async function settle(tx: PaymentTransaction) {
       status: tx.status
     }
   }
+  // Reject payments whose currency or amount doesn't match what we charged.
+  const { data: pay } = await db
+    .from('payments')
+    .select('currency, amount_kobo')
+    .eq('provider_reference', tx.reference)
+    .maybeSingle()
 
+  if (!pay || pay.currency !== tx.currency || Number(pay.amount_kobo) !== Number(tx.amount)) {
+    console.error('[Payment] Currency/amount mismatch', {
+      reference: tx.reference,
+      expected: pay ? { currency: pay.currency, amount: pay.amount_kobo } : null,
+      received: { currency: tx.currency, amount: tx.amount }
+    })
+    await db
+      .from('payments')
+      .update({ raw_response: { mismatch: true, tx } })
+      .eq('provider_reference', tx.reference)
+      .neq('status', 'paid')
+    // Return (not throw) so Paystack doesn't retry a permanent failure.
+    return { paid: false, status: 'mismatch' }
+  }
   // Atomically mark the order as paid.
   const { data: newlyPaid, error } = await db.rpc('mark_order_paid', {
     p_reference: tx.reference,
@@ -120,6 +140,7 @@ export async function settle(tx: PaymentTransaction) {
   const emailData: OrderEmailData = {
     orderNumber: order.order_number,
     customerName: getCustomerName(order.shipping_address),
+    currency: order.currency || 'NGN',
 
     items: (items ?? []).map((item) => ({
       name: item.product_name,

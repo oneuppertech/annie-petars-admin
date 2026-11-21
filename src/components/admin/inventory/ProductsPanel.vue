@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed, onMounted, inject } from 'vue'
-import { inventoryApi, errMsg, formatNaira } from '@/services/inventory'
+import { inventoryApi, errMsg, formatNaira, formatMoney } from '@/services/inventory'
 import ProductEditor from './ProductEditor.vue'
 import { Search } from '@element-plus/icons-vue'
 
