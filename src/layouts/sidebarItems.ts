@@ -26,6 +26,12 @@ const sidebarItems = [
        icon: 'mdi mdi-clipboard-edit-outline',
         to: '/custom-requests',
       },
+      {
+  nav: 'overview',
+  label: 'Messages',
+  icon: 'mdi mdi-message-text-outline',
+  to: '/messages',
+}
     ],
   },
 ]
