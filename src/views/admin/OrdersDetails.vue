@@ -737,15 +737,17 @@ const addrLines = computed(() => {
                 <label class="block space-y-2">
                   <span class="text-sm font-medium text-slate-700"> Shipping provider </span>
 
-                  <input
-                    v-model="form.provider"
-                    list="couriers"
-                    class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                  />
-
-                  <datalist id="couriers">
-                    <option v-for="c in COURIERS" :key="c" :value="c" />
-                  </datalist>
+                 <v-select
+  v-model="form.provider"
+  :items="COURIERS"
+  placeholder="Select shipping provider"
+  variant="outlined"
+  density="comfortable"
+  color="deep-purple"
+  hide-details
+  clearable
+  class="dialog-v-select"
+/>
                 </label>
 
                 <label class="block space-y-2">
@@ -763,11 +765,35 @@ const addrLines = computed(() => {
                     Estimated delivery (optional)
                   </span>
 
-                  <input
-                    v-model="form.eta"
-                    type="date"
-                    class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                  />
+                  <v-menu
+  :close-on-content-click="false"
+  location="bottom"
+  min-width="320"
+>
+  <template #activator="{ props }">
+    <v-text-field
+      v-bind="props"
+      :model-value="form.eta ? fmtDate(form.eta) : ''"
+      label="Estimated delivery"
+      placeholder="Select delivery date"
+      prepend-inner-icon="mdi-calendar"
+      variant="outlined"
+      density="comfortable"
+      color="deep-purple"
+      readonly
+      clearable
+      hide-details
+      @click:clear="form.eta = ''"
+    />
+  </template>
+
+  <v-date-picker
+    v-model="form.eta"
+    color="deep-purple"
+    hide-header
+    show-adjacent-months
+  />
+</v-menu>
                 </label>
 
                 <label class="block space-y-2">
@@ -814,14 +840,18 @@ const addrLines = computed(() => {
               <label class="block space-y-2">
                 <span class="text-sm font-medium text-slate-700"> Method </span>
 
-                <select
-                  v-model="form.payType"
-                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                >
-                  <option v-for="p in PAY_TYPES" :key="p.value" :value="p.value">
-                    {{ p.title }}
-                  </option>
-                </select>
+                <v-select
+  v-model="form.payType"
+  :items="PAY_TYPES"
+  item-title="title"
+  item-value="value"
+  label="Payment method"
+  variant="outlined"
+  density="comfortable"
+  color="deep-purple"
+  hide-details
+  class="dialog-v-select"
+/>
               </label>
 
               <label class="block space-y-2">
@@ -917,10 +947,17 @@ const addrLines = computed(() => {
               <label class="block space-y-2">
                 <span class="text-sm font-medium text-slate-700"> Shipping provider </span>
 
-                <input
-                  v-model="form.provider"
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                />
+                <v-select
+  v-model="form.provider"
+  :items="COURIERS"
+  placeholder="Select shipping provider"
+  variant="outlined"
+  density="comfortable"
+  color="deep-purple"
+  hide-details
+  clearable
+  class="dialog-v-select"
+/>
               </label>
 
               <label class="block space-y-2">
@@ -1070,3 +1107,18 @@ const addrLines = computed(() => {
     </div>
   </MainLayout>
 </template>
+
+<style scoped>
+  .dialog-v-select {
+  width: 100%;
+}
+
+.dialog-v-select :deep(.v-field),
+.dialog-v-select :deep(.v-field__outline) {
+  border-radius: 10px;
+}
+
+.dialog-v-select :deep(.v-field__input) {
+  font-size: 14px;
+}
+</style>

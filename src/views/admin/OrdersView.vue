@@ -351,23 +351,96 @@ const refresh = () => {
               />
             </div>
           </label>
-          <label class="field">
-            <span>Payment</span>
-            <select v-model="filters.payment_status" class="input">
-              <option value="">All payments</option>
-              <option value="paid">Paid</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="refunded">Refunded</option>
-            </select>
-          </label>
+          <div class="field">
+  <span>Payment</span>
+  <v-select
+    v-model="filters.payment_status"
+    :items="[
+      { title: 'All payments', value: '' },
+      { title: 'Paid', value: 'paid' },
+      { title: 'Unpaid', value: 'unpaid' },
+      { title: 'Refunded', value: 'refunded' }
+    ]"
+    item-title="title"
+    item-value="value"
+    variant="outlined"
+    density="comfortable"
+    color="deep-purple"
+    hide-details
+    class="orders-filter"
+  />
+</div>
           <div class="grid grid-cols-2 gap-2">
-            <label class="field"
-              ><span>From</span><input v-model="filters.from" type="date" class="input"
-            /></label>
-            <label class="field"
-              ><span>To</span><input v-model="filters.to" type="date" class="input"
-            /></label>
-          </div>
+  <!-- FROM DATE -->
+  <div class="field">
+    <span>From</span>
+
+    <v-menu
+      :close-on-content-click="false"
+      location="bottom"
+      min-width="320"
+    >
+      <template #activator="{ props }">
+        <v-text-field
+          v-bind="props"
+          :model-value="filters.from"
+          placeholder="Start date"
+          prepend-inner-icon="mdi-calendar"
+          variant="outlined"
+          density="comfortable"
+          color="deep-purple"
+          readonly
+          clearable
+          hide-details
+          @click:clear="filters.from = ''"
+        />
+      </template>
+
+      <v-date-picker
+        v-model="filters.from"
+        color="deep-purple"
+        hide-header
+        show-adjacent-months
+        :max="filters.to || undefined"
+      />
+    </v-menu>
+  </div>
+
+  <!-- TO DATE -->
+  <div class="field">
+    <span>To</span>
+
+    <v-menu
+      :close-on-content-click="false"
+      location="bottom"
+      min-width="320"
+    >
+      <template #activator="{ props }">
+        <v-text-field
+          v-bind="props"
+          :model-value="filters.to"
+          placeholder="End date"
+          prepend-inner-icon="mdi-calendar"
+          variant="outlined"
+          density="comfortable"
+          color="deep-purple"
+          readonly
+          clearable
+          hide-details
+          @click:clear="filters.to = ''"
+        />
+      </template>
+
+      <v-date-picker
+        v-model="filters.to"
+        color="deep-purple"
+        hide-header
+        show-adjacent-months
+        :min="filters.from || undefined"
+      />
+    </v-menu>
+  </div>
+</div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -589,5 +662,36 @@ const refresh = () => {
   color: var(--primary);
   font-weight: 600;
   font-size: 13px;
+}
+.orders-filter {
+  width: 100%;
+}
+
+.orders-filter :deep(.v-field) {
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.orders-filter :deep(.v-field__outline) {
+  --v-field-border-opacity: 0.2;
+}
+
+.orders-filter :deep(.v-field--focused .v-field__outline) {
+  --v-field-border-opacity: 1;
+}
+
+.field :deep(.v-text-field .v-field) {
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.field :deep(.v-text-field .v-field__input) {
+  min-height: 44px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.field :deep(.v-text-field .v-field__outline) {
+  --v-field-border-opacity: 0.2;
 }
 </style>
