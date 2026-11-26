@@ -74,7 +74,18 @@ const sidebarItems = [
           'owner',
           'admin'
         ]
-      }
+      },
+      {
+  nav: 'administration',
+  label: 'Approvals',
+  icon: 'mdi mdi-clipboard-check-outline',
+  to: '/admin/approvals',
+  roles: [
+    'owner',
+    'admin',
+    'catalog_manager'
+  ]
+}
     ]
   }
 ]

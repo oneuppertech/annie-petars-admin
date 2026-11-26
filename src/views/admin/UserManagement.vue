@@ -453,7 +453,6 @@ onMounted(load)
 <style scoped>
 .users {
   padding: 24px;
-  max-width: 1500px;
   margin: auto;
   color: #392720;
   --el-color-primary: #c4623a;

@@ -45,7 +45,21 @@ const router = createRouter({
       path: '/admin/users',
       component: () => import('@/views/admin/UserManagement.vue'),
       meta: { requiresAdmin: true }
-    }
+    },
+    {
+  path: '/admin/approvals',
+  name: 'admin-approvals',
+  component: () =>
+    import('@/views/admin/Approvals.vue'),
+  meta: {
+    requiresAuth: true,
+    roles: [
+      'owner',
+      'admin',
+      'catalog_manager'
+    ]
+  }
+}
   ],
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) {

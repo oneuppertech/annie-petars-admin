@@ -45,7 +45,7 @@ const { mdAndUp } = useDisplay()
       
 
       <v-spacer />
-
+      <HeaderView/>
      
     </v-app-bar>
 
