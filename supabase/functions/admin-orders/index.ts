@@ -2,6 +2,7 @@ import { handle, reply, readJson, text, HttpError } from '../_shared/http.ts'
 import { requireRole } from '../_shared/supabaseAdmin.ts'
 import { sendOrderEmail } from '../_shared/sendOrderNotifications.ts'
 import type { OrderEmailData, OrderEvent } from '../_shared/orderEmails.ts'
+
 const statuses = [
   'pending_payment',
   'paid',
@@ -37,9 +38,14 @@ const ADDR_KEYS = [
   'country_code'
 ]
 const SORTS = ['placed_at', 'total_kobo', 'updated_at', 'order_number']
+const EXPORT_MAX = 5000
+const STATS_MAX = 10000
+const HOUR = 3_600_000
+const DAY = 86_400_000
 
 // deno-lint-ignore no-explicit-any
 type Any = any
+type Param = (k: string) => string | null
 
 /* ---------- helpers ---------- */
 
@@ -59,6 +65,77 @@ const safeSearch = (s: string, max: number) =>
     .replace(/[,()%*\\]/g, ' ')
     .trim()
     .slice(0, max)
+
+/** "Ada Obi-Nwosu" -> "ada-obi-nwosu" (ASCII-safe for filenames) */
+const slug = (s: string, max = 40) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, max)
+    .replace(/-+$/g, '')
+
+/** ISO-4217-shaped code (e.g. NGN, GBP). Returns null when absent. */
+function currencyParam(v: string | null): string | null {
+  if (!v) return null
+  const c = v.trim().toUpperCase()
+  if (!/^[A-Z]{3}$/.test(c)) throw new HttpError(400, 'Invalid currency')
+  return c
+}
+
+function applyRange(q: Any, from: string | null, to: string | null) {
+  if (from) q = q.gte('placed_at', from)
+  if (to) q = q.lte('placed_at', to.length === 10 ? `${to}T23:59:59.999Z` : to)
+  return q
+}
+
+/** Shared by the list and the CSV export so both always filter identically. */
+function applyFilters(q: Any, param: Param) {
+  const status = param('status')
+  if (status) {
+    const list = status
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => statuses.includes(s))
+    if (list.length) q = list.length > 1 ? q.in('status', list) : q.eq('status', list[0])
+  }
+
+  const search = param('q')
+  if (search) {
+    const s = safeSearch(search, 120)
+    if (s)
+      q = q.or(
+        `order_number.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%,tracking_number.ilike.%${s}%`
+      )
+  }
+
+  const pay = param('payment_status')
+  if (pay) q = q.eq('payment_status', pay)
+
+  const currency = currencyParam(param('currency'))
+  if (currency) q = q.eq('currency', currency)
+
+  const method = param('delivery_method')
+  if (method === 'delivery' || method === 'pickup') q = q.eq('delivery_method', method)
+
+  const provider = param('provider')
+  if (provider) q = q.ilike('shipping_provider', `%${safeSearch(provider, 60)}%`)
+
+  const customerId = param('customer_id')
+  if (customerId) q = q.eq('customer_id', customerId)
+
+  if (param('guest') === 'true') q = q.is('customer_id', null)
+  if (param('has_tracking') === 'true') q = q.not('tracking_number', 'is', null)
+
+  const minTotal = param('min_total')
+  if (minTotal && !isNaN(Number(minTotal))) q = q.gte('total_kobo', Number(minTotal))
+  const maxTotal = param('max_total')
+  if (maxTotal && !isNaN(Number(maxTotal))) q = q.lte('total_kobo', Number(maxTotal))
+
+  return applyRange(q, param('from'), param('to'))
+}
 
 async function loadDetail(db: Any, id: string) {
   const { data: order, error } = await db
@@ -192,6 +269,9 @@ function deliveryFields(b: Any): Record<string, unknown> {
   if ('tracking_url' in b) p.tracking_url = text(b.tracking_url, 500) || null
   return p
 }
+
+/* ---------- emails ---------- */
+
 function emailEventForStatus(status: string): OrderEvent | null {
   switch (status) {
     case 'shipped':
@@ -214,6 +294,7 @@ function buildOrderEmailData(order: Any, reason?: string): OrderEmailData {
   return {
     orderNumber: order.order_number,
     customerName,
+    currency: order.currency || 'NGN',
 
     items: (order.items ?? []).map((item: Any) => {
       const snapshot = item.product_snapshot ?? {}
@@ -288,6 +369,8 @@ async function notifyOrderStatus(order: Any, status: string, reason?: string) {
   }
 }
 
+/* ---------- invoice ---------- */
+
 const logoCache = new Map<string, string | null>()
 
 /** PNG/JPEG only: pdfmake can't embed webp/svg. */
@@ -349,16 +432,165 @@ async function loadInvoice(db: Any, id: string) {
     .filter((t: Any) => ['order.refunded', 'order.partial_refund'].includes(t.action))
     .reduce((sum: number, t: Any) => sum + Number(t.metadata?.amount_kobo ?? 0), 0)
 
+  const customerName =
+    detail.order.customer?.full_name ?? detail.order.shipping_address?.recipient_name ?? ''
+
   return {
     ...detail,
     timeline,
     refunded_kobo,
+    currency: detail.order.currency || 'NGN',
     business,
     logo_data_url: await logoDataUrl(logoUrl),
     generated_at: new Date().toISOString(),
-    filename: `invoice-${detail.order.order_number}.pdf`
+    filename: `invoice-${detail.order.order_number}-${slug(customerName) || 'guest'}.pdf`
   }
 }
+
+/* ---------- stats ---------- */
+
+async function loadStats(db: Any, param: Param) {
+  const currency = currencyParam(param('currency'))
+
+  // Totals honour the date range
+  let q = db
+    .from('orders')
+    .select('id,customer_id,status,payment_status,total_kobo,placed_at')
+    .limit(STATS_MAX)
+  if (currency) q = q.eq('currency', currency)
+  q = applyRange(q, param('from'), param('to'))
+  const { data, error } = await q
+  if (error) throw new HttpError(500, 'Could not load stats', error.message)
+
+  const rows: Any[] = data ?? []
+  const paid = rows.filter((o) => o.payment_status === 'paid' && !CLOSED.includes(o.status))
+  const revenue = paid.reduce((n, o) => n + Number(o.total_kobo), 0)
+  const customers = new Set(rows.filter((o) => o.customer_id).map((o) => o.customer_id))
+
+  // "Needs attention" is about what is open right now, so it ignores the date range
+  let aq = db
+    .from('orders')
+    .select('status,placed_at,updated_at')
+    .in('status', ['pending_payment', 'paid', 'processing', 'ready_to_ship', 'shipped'])
+    .limit(STATS_MAX)
+  if (currency) aq = aq.eq('currency', currency)
+  const { data: open, error: aerr } = await aq
+  if (aerr) throw new HttpError(500, 'Could not load stats', aerr.message)
+
+  const now = Date.now()
+  const age = (iso: string) => now - Date.parse(iso)
+  const attention = { unpaid_over_24h: 0, to_fulfil_over_48h: 0, shipped_over_7d: 0 }
+  for (const o of open ?? []) {
+    if (o.status === 'pending_payment' && age(o.placed_at) > 24 * HOUR) attention.unpaid_over_24h++
+    else if (o.status === 'shipped') {
+      if (age(o.updated_at) > 7 * DAY) attention.shipped_over_7d++
+    } else if (o.status !== 'pending_payment' && age(o.updated_at) > 48 * HOUR)
+      attention.to_fulfil_over_48h++
+  }
+
+  return {
+    currency,
+    totals: {
+      orders: rows.length,
+      unique_customers: customers.size,
+      guest_orders: rows.filter((o) => !o.customer_id).length,
+      paid_orders: paid.length,
+      revenue_kobo: revenue,
+      avg_order_kobo: paid.length ? Math.round(revenue / paid.length) : 0
+    },
+    attention,
+    truncated: rows.length >= STATS_MAX
+  }
+}
+
+/* ---------- export ---------- */
+
+const csvCell = (v: unknown) => {
+  let s = v == null ? '' : String(v)
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}` // neutralise spreadsheet formula injection
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+const major = (kobo: unknown) => (Number(kobo || 0) / 100).toFixed(2)
+
+async function exportOrders(db: Any, param: Param) {
+  const sort = SORTS.includes(param('sort') ?? '') ? param('sort')! : 'placed_at'
+  const asc = param('dir') === 'asc'
+
+  let q = db
+    .from('orders')
+    .select(
+      '*, items:order_items(product_name,size,colour,quantity), customer:customers(full_name)'
+    )
+  q = applyFilters(q, param)
+    .order(sort, { ascending: asc })
+    .limit(EXPORT_MAX + 1)
+  const { data, error } = await q
+  if (error) throw new HttpError(500, 'Could not export orders', error.message)
+
+  const all: Any[] = data ?? []
+  const truncated = all.length > EXPORT_MAX
+  const rows = truncated ? all.slice(0, EXPORT_MAX) : all
+
+  const header = [
+    'Order number',
+    'Placed at',
+    'Status',
+    'Payment',
+    'Currency',
+    'Customer',
+    'Email',
+    'Phone',
+    'Items',
+    'Subtotal',
+    'Delivery',
+    'Discount',
+    'Total',
+    'Delivery method',
+    'Shipping provider',
+    'Tracking number'
+  ]
+  const lines = [header.map(csvCell).join(',')]
+  for (const o of rows) {
+    const a: Any = o.shipping_address ?? {}
+    lines.push(
+      [
+        o.order_number,
+        o.placed_at,
+        o.status,
+        o.payment_status,
+        o.currency,
+        o.customer?.full_name ?? a.recipient_name ?? a.name ?? 'Guest',
+        o.email,
+        o.phone,
+        (o.items ?? [])
+          .map((i: Any) => {
+            const opts = [i.size, i.colour].filter(Boolean).join('/')
+            return `${i.product_name}${opts ? ` (${opts})` : ''} x${i.quantity}`
+          })
+          .join('; '),
+        major(o.subtotal_kobo),
+        major(o.shipping_kobo),
+        major(o.discount_kobo),
+        major(o.total_kobo),
+        o.delivery_method,
+        o.shipping_provider,
+        o.tracking_number
+      ]
+        .map(csvCell)
+        .join(',')
+    )
+  }
+
+  const cur = currencyParam(param('currency'))
+  const stamp = new Date().toISOString().slice(0, 10)
+  return {
+    csv: lines.join('\n'),
+    filename: `orders-${cur ? cur.toLowerCase() : 'all'}-${stamp}.csv`,
+    count: rows.length,
+    truncated
+  }
+}
+
 /* ---------- handler ---------- */
 
 Deno.serve(
@@ -368,20 +600,23 @@ Deno.serve(
     /* ===== GET ===== */
     if (req.method === 'GET') {
       const u = new URL(req.url)
-      const param = (k: string) => u.searchParams.get(k)
+      const param: Param = (k) => u.searchParams.get(k)
+      const resource = param('resource')
 
-      if (param('resource') === 'order') {
+      if (resource === 'order') {
         const id = text(param('id'), 80)
         if (!id) throw new HttpError(400, 'Order id is required')
         return reply(cors, await loadDetail(db, id))
       }
-      if (param('resource') === 'invoice') {
+      if (resource === 'invoice') {
         const id = text(param('id'), 80)
         if (!id) throw new HttpError(400, 'Order id is required')
         return reply(cors, await loadInvoice(db, id))
       }
+      if (resource === 'stats') return reply(cors, await loadStats(db, param))
+      if (resource === 'export') return reply(cors, await exportOrders(db, param))
 
-      // ----- list -----
+      // ----- list (resource=list or no resource) -----
       const page = Math.max(Number(param('page') || 1) || 1, 1)
       const limit = Math.min(Math.max(Number(param('limit') || 20) || 20, 1), 100)
       const sort = SORTS.includes(param('sort') ?? '') ? param('sort')! : 'placed_at'
@@ -390,48 +625,9 @@ Deno.serve(
       let q = db
         .from('orders')
         .select('*, items:order_items(*), customer:customers(id, full_name)', { count: 'exact' })
+      q = applyFilters(q, param)
         .order(sort, { ascending: asc })
         .range((page - 1) * limit, page * limit - 1)
-
-      const status = param('status')
-      if (status) {
-        const list = status
-          .split(',')
-          .map((s) => s.trim())
-          .filter((s) => statuses.includes(s))
-        if (list.length) q = list.length > 1 ? q.in('status', list) : q.eq('status', list[0])
-      }
-
-      const search = param('q')
-      if (search) {
-        const s = safeSearch(search, 120)
-        if (s) q = q.or(`order_number.ilike.%${s}%,email.ilike.%${s}%`)
-      }
-
-      const pay = param('payment_status')
-      if (pay) q = q.eq('payment_status', pay)
-
-      const method = param('delivery_method')
-      if (method === 'delivery' || method === 'pickup') q = q.eq('delivery_method', method)
-
-      const provider = param('provider')
-      if (provider) q = q.ilike('shipping_provider', `%${safeSearch(provider, 60)}%`)
-
-      const customerId = param('customer_id')
-      if (customerId) q = q.eq('customer_id', customerId)
-
-      if (param('guest') === 'true') q = q.is('customer_id', null)
-      if (param('has_tracking') === 'true') q = q.not('tracking_number', 'is', null)
-
-      const minTotal = param('min_total')
-      if (minTotal && !isNaN(Number(minTotal))) q = q.gte('total_kobo', Number(minTotal))
-      const maxTotal = param('max_total')
-      if (maxTotal && !isNaN(Number(maxTotal))) q = q.lte('total_kobo', Number(maxTotal))
-
-      const from = param('from')
-      if (from) q = q.gte('placed_at', from)
-      const to = param('to')
-      if (to) q = q.lte('placed_at', to.length === 10 ? `${to}T23:59:59.999Z` : to)
 
       const { data, count, error } = await q
       if (error) throw new HttpError(500, 'Could not load orders', error.message)
@@ -590,6 +786,7 @@ Deno.serve(
           await log(db, user.id, id, 'order.payment_recorded', {
             reference,
             amount_kobo: order.total_kobo,
+            currency: order.currency,
             payment_type: type
           })
 
@@ -621,6 +818,7 @@ Deno.serve(
           }
           await log(db, user.id, id, full ? 'order.refunded' : 'order.partial_refund', {
             amount_kobo: amount,
+            currency: order.currency,
             reason,
             reference: text(b.reference, 120) || undefined
           })

@@ -16,7 +16,6 @@ import type {
 import type { InvoiceData } from '@/utils/orderInvoice'
 // ...
 
-
 const ENDPOINT = '/admin-orders' // <- supabase/functions/<name>
 
 type Params = Record<string, unknown>
@@ -97,7 +96,9 @@ export const OrdersService = {
     if (!r?.order) throw new Error('Order not found')
     return r as OrderDetail
   },
-  async stats(params: { from?: string; to?: string } = {}): Promise<OrderStats | null> {
+  async stats(
+    params: { from?: string; to?: string; currency?: string } = {}
+  ): Promise<OrderStats | null> {
     try {
       const response = await read('stats', params)
 
@@ -134,11 +135,10 @@ export const OrdersService = {
 
       const totals = {
         orders: Number(result?.total ?? orders.length),
-        customers: uniqueCustomers.size,
-        guests: guestOrders.length,
+        unique_customers: uniqueCustomers.size,
+        guest_orders: guestOrders.length,
         avg_order_kobo: averageOrder
       }
-
       console.log('[Orders Stats] Temporary calculated totals:', totals)
 
       return {

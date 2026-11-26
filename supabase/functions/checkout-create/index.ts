@@ -1,4 +1,3 @@
-
 import {
   handle,
   reply,
@@ -11,8 +10,6 @@ import {
 
 import { getAdminClient } from '../_shared/supabaseAdmin.ts'
 import { initTx } from '../_shared/paystack.ts'
-
-const DELIVERY_FEE = 500000 // ₦5,000 in kobo
 
 Deno.serve(
   handle(async (req, cors) => {
@@ -30,9 +27,7 @@ Deno.serve(
 
     if (
       !items.length ||
-      items.some(
-        i => !i.product_id || !(i.qty >= 1 && i.qty <= 99)
-      )
+      items.some(i => !i.product_id || !(i.qty >= 1 && i.qty <= 99))
     ) {
       throw new HttpError(400, 'Invalid cart')
     }
@@ -42,10 +37,10 @@ Deno.serve(
         ? b.shippingAddress
         : {}
 
+    // Delivery fee is now set inside create_order (per currency) and stored in orders.shipping_kobo
     const normalizedShipping = {
       ...shipping,
-      name: text(b.name, 120),
-      delivery_fee_kobo: DELIVERY_FEE
+      name: text(b.name, 120)
     }
 
     const mail = email(b.email)
@@ -70,44 +65,46 @@ Deno.serve(
       order_id: string
       order_number: string
       total_kobo: number
+      currency: string
+      shipping_kobo: number
     }
 
     if (
       !o?.order_id ||
       !o?.order_number ||
-      !Number.isFinite(Number(o.total_kobo))
+      !o?.currency ||
+      !Number.isFinite(Number(o.total_kobo)) ||
+      !Number.isFinite(Number(o.shipping_kobo))
     ) {
       throw new HttpError(500, 'Invalid order response')
     }
 
-    // Save the complete order amount.
-    const { error: paymentError } = await db
-      .from('payments')
-      .insert({
-        order_id: o.order_id,
-        provider: 'paystack',
-        provider_reference: o.order_number,
-        amount_kobo: o.total_kobo
-      })
+    // Save the complete order amount in the order's currency.
+    const { error: paymentError } = await db.from('payments').insert({
+      order_id: o.order_id,
+      provider: 'paystack',
+      provider_reference: o.order_number,
+      amount_kobo: o.total_kobo,
+      currency: o.currency
+    })
 
     if (paymentError) {
       console.error('Payment record error:', paymentError)
       throw new HttpError(500, 'Unable to create payment record')
     }
 
-    // Initialize Paystack with the complete order amount.
+    // Initialize Paystack with the complete order amount and currency.
     const tx = await initTx({
       email: mail,
       amount: o.total_kobo,
-      currency: 'NGN',
+      currency: o.currency,
       reference: o.order_number,
-      callback_url:
-        Deno.env.get('SHOP_URL') ||
-        'https://shop.anniepetars.com',
+      callback_url: Deno.env.get('SHOP_URL') || 'https://shop.anniepetars.com',
       metadata: {
         order_id: o.order_id,
         order_number: o.order_number,
-        delivery_fee_kobo: DELIVERY_FEE
+        delivery_fee_kobo: o.shipping_kobo,
+        currency: o.currency
       }
     })
 
@@ -115,7 +112,8 @@ Deno.serve(
       orderNumber: o.order_number,
       authorizationUrl: tx.authorization_url,
       amount: o.total_kobo,
-      deliveryFee: DELIVERY_FEE
+      currency: o.currency,
+      deliveryFee: o.shipping_kobo
     })
   })
 )

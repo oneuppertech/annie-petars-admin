@@ -18,6 +18,7 @@ const IMG_TYPES: Record<string, string> = {
 }
 
 /* ---------- helpers ---------- */
+const CURRENCIES = ['NGN', 'USD', 'GBP', 'EUR'] // keep in sync with the DB CHECK and the frontend list
 const uid = (v: unknown) => {
   if (typeof v !== 'string' || !UUID.test(v)) throw new HttpError(400, 'Invalid id')
   return v
@@ -94,7 +95,7 @@ async function listProducts(db: DB, sp: URLSearchParams) {
   const page = Math.max(1, Number(sp.get('page')) || 1)
   const size = Math.min(100, Math.max(1, Number(sp.get('limit')) || 20))
   let q = db.from('products').select(
-    `id,name,slug,sku,status,price_kobo,compare_at_price_kobo,is_featured,is_new_arrival,collection_id,updated_at,
+    `id,name,slug,sku,status,currency,price_kobo,compare_at_price_kobo,is_featured,is_new_arrival,collection_id,updated_at,
      collections(name),product_images(image_url,is_primary,sort_order),product_variants(stock_quantity,is_active)`,
     { count: 'exact' }
   )
@@ -374,10 +375,13 @@ async function saveProduct(db: DB, userId: string, b: Obj) {
   if (!name) throw new HttpError(400, 'Product name is required')
   const status = String(p.status || 'draft')
   if (!STATUSES.includes(status)) throw new HttpError(400, 'Invalid status')
+    const currency = String(p.currency || 'NGN').toUpperCase()
+if (!CURRENCIES.includes(currency)) throw new HttpError(400, 'Unsupported currency')
 
   const row: Obj = {
     collection_id: p.collection_id ? uid(p.collection_id) : null,
     name,
+     currency,
     slug: slugify(text(p.slug, 200) || name),
     sku: text(p.sku, 80) || null,
     short_description: text(p.short_description, 500) || null,

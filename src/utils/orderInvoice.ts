@@ -39,13 +39,32 @@ function getPdfMake() {
 }
 
 /* ---------- formatting ---------- */
-const money = (k: unknown) =>
-  'NGN ' +
-  (Number(k ?? 0) / 100).toLocaleString('en-NG', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })
+const money = (amount: unknown, currency = 'NGN') => {
+  const code = String(currency || 'NGN').toUpperCase()
 
+  const localeByCurrency: Record<string, string> = {
+    NGN: 'en-NG',
+    GBP: 'en-GB',
+    USD: 'en-US',
+    EUR: 'en-IE',
+    CAD: 'en-CA',
+    AUD: 'en-AU',
+    GHS: 'en-GH',
+    KES: 'en-KE',
+    ZAR: 'en-ZA'
+  }
+
+  try {
+    return new Intl.NumberFormat(localeByCurrency[code] || 'en', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(Number(amount ?? 0) / 100)
+  } catch {
+    return `${code} ${(Number(amount ?? 0) / 100).toFixed(2)}`
+  }
+}
 const dt = (v?: string | null, withTime = true) =>
   v
     ? new Date(v).toLocaleString('en-NG', {
@@ -104,6 +123,7 @@ const badge = (value: string) => ({
 export async function buildInvoiceDoc(inv: InvoiceData, opts: InvoiceOptions = {}) {
   const internal = opts.internal ?? true
   const { order: o, payments, timeline, reconciliation: r, business: biz } = inv
+  const currency = String(o.currency || 'NGN').toUpperCase()
   const a: any = o.shipping_address ?? {}
   const logo = inv.logo_data_url
   const size = logo ? await imageSize(logo) : null
@@ -244,8 +264,8 @@ export async function buildInvoiceDoc(inv: InvoiceData, opts: InvoiceOptions = {
                 ]
               },
               { text: String(i.quantity), alignment: 'right' },
-              { text: money(i.unit_price_kobo), alignment: 'right' },
-              { text: money(i.line_total_kobo), alignment: 'right', bold: true }
+              { text: money(i.unit_price_kobo, currency), alignment: 'right' },
+              { text: money(i.line_total_kobo, currency), alignment: 'right', bold: true }
             ]
             if (internal)
               row.splice(2, 0, {
@@ -278,20 +298,20 @@ export async function buildInvoiceDoc(inv: InvoiceData, opts: InvoiceOptions = {
         table: {
           widths: ['*', 110],
           body: [
-            totalRow('Subtotal', money(o.subtotal_kobo)),
-            totalRow('Shipping', money(o.shipping_kobo)),
-            ...(Number(o.discount_kobo) ? [totalRow('Discount', `-${money(o.discount_kobo)}`)] : []),
-            totalRow('Order total', money(o.total_kobo), true),
-            totalRow('Amount paid', money(r.paid_kobo)),
+            totalRow('Subtotal', money(o.subtotal_kobo, currency)),
+            totalRow('Shipping', money(o.shipping_kobo, currency)),
+            ...(Number(o.discount_kobo) ? [totalRow('Discount', `-${money(o.discount_kobo, currency)}`)] : []),
+            totalRow('Order total', money(o.total_kobo, currency), true),
+            totalRow('Amount paid', money(r.paid_kobo, currency)),
             ...(Number(inv.refunded_kobo) > 0
               ? [
-                  totalRow('Refunded', `-${money(inv.refunded_kobo)}`, false, '#b91c1c'),
-                  totalRow('Net received', money(netReceived), true)
+                  totalRow('Refunded', `-${money(inv.refunded_kobo, currency)}`, false, '#b91c1c'),
+                  totalRow('Net received', money(netReceived, currency), true)
                 ]
               : []),
             totalRow(
               'Balance due',
-              money(['cancelled', 'refunded'].includes(o.status) ? 0 : outstanding),
+              money(['cancelled', 'refunded'].includes(o.status) ? 0 : outstanding, currency),
               true,
               outstanding > 0 && !['cancelled', 'refunded'].includes(o.status)
                 ? '#b91c1c'
@@ -323,7 +343,7 @@ export async function buildInvoiceDoc(inv: InvoiceData, opts: InvoiceOptions = {
                 { text: p.provider_reference || '—', fontSize: 8 },
                 { text: dt(p.verified_at ?? p.created_at) , fontSize: 8 },
                 badge(p.status),
-                { text: money(p.amount_kobo), alignment: 'right' }
+                { text: money(p.amount_kobo, currency), alignment: 'right' }
               ])
             ]
           },
@@ -343,12 +363,12 @@ export async function buildInvoiceDoc(inv: InvoiceData, opts: InvoiceOptions = {
     ? [
         H('Reconciliation'),
         kv([
-          ['Line items total', money(r.items_total_kobo)],
+          ['Line items total', money(r.items_total_kobo, currency)],
           ['Subtotal matches items', r.subtotal_matches_items ? 'Yes' : 'NO — mismatch'],
           ['Total = subtotal + shipping − discount', r.total_matches_parts ? 'Yes' : 'NO — mismatch'],
           [
             'Payments match total',
-            r.payment_matches_total ? 'Yes' : `NO — received ${money(r.paid_kobo)}`
+            r.payment_matches_total ? 'Yes' : `NO — received ${money(r.paid_kobo, currency)}`
           ],
           ['Stock reserved', inv.flags?.stock_held ? 'Yes' : 'No']
         ]),
@@ -363,7 +383,7 @@ export async function buildInvoiceDoc(inv: InvoiceData, opts: InvoiceOptions = {
                   ...(timeline as any[]).map((t) => {
                     let ev = t.action
                     try {
-                      ev = describeTimeline(t) || t.action
+                      ev = describeTimeline(t, currency) || t.action
                     } catch {
                       /* fall back to raw action */
                     }

@@ -17,7 +17,8 @@ import {
   pill,
   describeTimeline,
   humanize,
-  relTime
+  relTime,
+  money
 } from '@/utils/orders'
 import type { OrderDetail, OrderStatus } from '@/types/orders'
 import { downloadInvoice } from '@/utils/orderInvoice'
@@ -55,12 +56,45 @@ const toast = (text: string, tone = '') => {
   clearTimeout(snackTimer)
   snackTimer = setTimeout(() => (snack.show = false), 4000)
 }
+async function copyTrackingPageUrl() {
+  const url = o.value?.tracking_page_url
+
+  if (!url) {
+    toast('Tracking page URL is not available yet.', 'red')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(url)
+    toast('Customer tracking link copied!')
+  } catch {
+    // Fallback for browsers where Clipboard API is unavailable
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = url
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+
+      const copied = document.execCommand('copy')
+      textarea.remove()
+
+      if (!copied) throw new Error('Copy failed')
+
+      toast('Customer tracking link copied!')
+    } catch {
+      toast('Unable to copy tracking link. Please copy it manually.', 'red')
+    }
+  }
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const errMsg = (e: any) =>
   e?.response?.data?.error ?? e?.response?.data?.message ?? e?.message ?? 'Something went wrong'
 
 const d = computed(() => detail.value)
 const o = computed(() => detail.value?.order)
+const cur = computed(() => o.value?.currency || 'NGN')
 const closed = computed(() => ['cancelled', 'refunded'].includes(o.value?.status ?? ''))
 const canShipEdit = computed(
   () => !!o.value && o.value.status !== 'pending_payment' && !closed.value
@@ -81,7 +115,7 @@ const mismatch = computed(() => {
   if (!r.subtotal_matches_items) out.push('Subtotal does not match the line items.')
   if (!r.total_matches_parts) out.push('Total does not equal subtotal + shipping − discount.')
   if (o.value.payment_status === 'paid' && !r.payment_matches_total)
-    out.push(`Payments received (${naira(r.paid_kobo)}) differ from the order total.`)
+    out.push(`Payments received (${money(r.paid_kobo, cur.value)}) differ from the order total.`)
   return out
 })
 
@@ -188,15 +222,15 @@ function openDlg(k: Exclude<Dlg, ''>, next?: OrderStatus) {
       status: next,
       provider: ord.shipping_provider ?? '',
       tracking: ord.tracking_number ?? '',
-      eta: ord.estimated_delivery_date ?? '',
-      
+      eta: ord.estimated_delivery_date ?? ''
     })
   if (k === 'shipping')
-    Object.assign(form, {
-      provider: ord.shipping_provider ?? '',
-      tracking: ord.tracking_number ?? '',
-      trackingUrl: ord.tracking_url ?? ''
-    })
+  Object.assign(form, {
+    provider: ord.shipping_provider ?? '',
+    tracking: ord.tracking_number ?? '',
+    trackingUrl: ord.tracking_url ?? '',
+    eta: ord.estimated_delivery_date ?? ''
+  })
   if (k === 'contact') Object.assign(form, { email: ord.email, phone: ord.phone ?? '' })
   if (k === 'notes')
     Object.assign(form, { internal: ord.internal_note ?? '', customer: ord.customer_note ?? '' })
@@ -293,7 +327,8 @@ function submit() {
           OrdersService.updateShipping(oid, {
             shipping_provider: form.provider.trim() || null,
             tracking_number: form.tracking.trim() || null,
-            estimated_delivery_date: form.eta || null,
+            tracking_url: form.trackingUrl.trim() || null,
+            estimated_delivery_date: form.eta || null
           }),
         'Shipping updated'
       )
@@ -380,13 +415,13 @@ const addrLines = computed(() => {
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-  <button class="btn-ghost" :disabled="invoicing" @click="printInvoice(true)">
-    {{ invoicing ? 'Preparing…' : 'Invoice PDF' }}
-  </button>
-  <button class="btn-ghost" :disabled="invoicing" @click="printInvoice(false)">
-    Customer copy
-  </button>
-</div>
+            <button class="btn-ghost" :disabled="invoicing" @click="printInvoice(true)">
+              {{ invoicing ? 'Preparing…' : 'Invoice PDF' }}
+            </button>
+            <button class="btn-ghost" :disabled="invoicing" @click="printInvoice(false)">
+              Customer copy
+            </button>
+          </div>
           <div v-if="canWrite" class="flex flex-wrap gap-2">
             <button v-if="canPay && canMoney" class="btn-primary" @click="openDlg('payment')">
               <UiIcon name="wallet" /> Record payment
@@ -451,10 +486,10 @@ const addrLines = computed(() => {
                   </div>
                   <div class="text-right">
                     <p class="cell-sub tabular-nums">
-                      {{ naira(i.unit_price_kobo) }} × {{ i.quantity }}
+                      {{ money(i.unit_price_kobo, cur) }} × {{ i.quantity }}
                     </p>
                     <p class="text-[14px] font-semibold tabular-nums text-[var(--ink)]">
-                      {{ naira(i.line_total_kobo) }}
+                      {{ money(i.line_total_kobo, cur) }}
                     </p>
                   </div>
                 </li>
@@ -462,21 +497,21 @@ const addrLines = computed(() => {
               <dl class="space-y-1.5 border-t border-[var(--line)] px-6 py-4 text-[13.5px]">
                 <div class="flex justify-between">
                   <dt class="muted">Subtotal</dt>
-                  <dd class="tabular-nums">{{ naira(o.subtotal_kobo) }}</dd>
+                  <dd class="tabular-nums">{{ money(o.subtotal_kobo, cur) }}</dd>
                 </div>
                 <div class="flex justify-between">
                   <dt class="muted">Shipping</dt>
-                  <dd class="tabular-nums">{{ naira(o.shipping_kobo) }}</dd>
+                  <dd class="tabular-nums">{{ money(o.shipping_kobo, cur) }}</dd>
                 </div>
                 <div v-if="o.discount_kobo" class="flex justify-between">
                   <dt class="muted">Discount</dt>
-                  <dd class="tabular-nums">−{{ naira(o.discount_kobo) }}</dd>
+                  <dd class="tabular-nums">−{{ money(o.discount_kobo, cur) }}</dd>
                 </div>
                 <div
                   class="flex justify-between border-t border-[var(--line)] pt-2 text-[15px] font-semibold"
                 >
                   <dt>Total</dt>
-                  <dd class="tabular-nums">{{ naira(o.total_kobo) }}</dd>
+                  <dd class="tabular-nums">{{ money(o.total_kobo, cur) }}</dd>
                 </div>
               </dl>
             </section>
@@ -500,7 +535,7 @@ const addrLines = computed(() => {
                 <li v-for="t in d.timeline" :key="t.id" class="flex gap-3">
                   <span class="tl-dot"></span>
                   <div>
-                    <p class="text-[13.5px] text-[var(--ink)]">{{ describeTimeline(t) }}</p>
+                    <p class="text-[13.5px] text-[var(--ink)]">{{ describeTimeline(t, cur) }}</p>
                     <p class="cell-sub">{{ fmtDate(t.created_at) }}</p>
                   </div>
                 </li>
@@ -571,6 +606,58 @@ const addrLines = computed(() => {
             <p v-if="o.shipped_at" class="cell-sub">Shipped {{ fmtDate(o.shipped_at) }}</p>
             <p v-if="o.delivered_at" class="cell-sub">Delivered {{ fmtDate(o.delivered_at) }}</p>
 
+            <!-- CUSTOMER TRACKING PAGE -->
+            <section class="card p-6" data-aos="fade-up">
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <h2 class="card-title">Customer tracking page</h2>
+
+                <span
+                  v-if="o.tracking_page_url"
+                  class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+                >
+                  Generated
+                </span>
+              </div>
+
+              <template v-if="o.tracking_page_url">
+                <p class="cell-sub mb-3">
+                  Share this link with the customer so they can follow their order.
+                </p>
+
+                <div class="flex items-center gap-2">
+                  <input
+                    :value="o.tracking_page_url"
+                    readonly
+                    class="input min-w-0 flex-1 text-xs"
+                  />
+
+                  <button
+                    type="button"
+                    class="btn-ghost shrink-0"
+                    title="Copy customer tracking link"
+                    @click="copyTrackingPageUrl"
+                  >
+                    <UiIcon name="copy" />
+                    Copy
+                  </button>
+                </div>
+
+                <a
+                  :href="o.tracking_page_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link mt-3 inline-flex items-center gap-1"
+                >
+                  Open tracking page
+                  <UiIcon name="external-link" :size="14" />
+                </a>
+              </template>
+
+              <p v-else class="muted text-sm">
+                Customer tracking URL has not been generated for this order.
+              </p>
+            </section>
+
             <section class="card p-6" data-aos="fade-up">
               <h2 class="card-title mb-3">Payments</h2>
               <ul class="divide-y divide-[var(--line)]">
@@ -588,7 +675,9 @@ const addrLines = computed(() => {
                     </p>
                   </div>
                   <div class="text-right">
-                    <p class="text-[13.5px] font-medium tabular-nums">{{ naira(p.amount_kobo) }}</p>
+                    <p class="text-[13.5px] font-medium tabular-nums">
+                      {{ money(p.amount_kobo, cur) }}
+                    </p>
                     <span :class="pill(paymentTone(p.status))">{{ p.status }}</span>
                   </div>
                 </li>
@@ -615,379 +704,395 @@ const addrLines = computed(() => {
       </template>
 
       <!-- Dialog -->
-     <!-- Dialog -->
+      <!-- Dialog -->
 
-<v-dialog
-  v-model="dialogOpen"
-  max-width="520"
-  scrollable
-  :persistent="saving"
+      <v-dialog v-model="dialogOpen" max-width="520" scrollable :persistent="saving">
+        <div class="overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <!-- Header -->
+          <div class="border-b border-slate-100 px-6 py-5">
+            <h3 class="text-xl font-bold text-slate-900">
+              {{ dlgTitle }}
+            </h3>
+
+            <p class="mt-1 text-sm text-slate-500">
+              <template v-if="dlg === 'status'"> Update the status of this order. </template>
+              <template v-else-if="dlg === 'payment'"> Record a payment for this order. </template>
+              <template v-else-if="dlg === 'refund'"> Process a refund for this order. </template>
+              <template v-else> Update the order information. </template>
+            </p>
+          </div>
+
+          <!-- Body -->
+          <div class="max-h-[65vh] space-y-5 overflow-y-auto px-6 py-5">
+            <!-- STATUS -->
+            <template v-if="dlg === 'status'">
+              <p
+                v-if="form.status === 'cancelled'"
+                class="rounded-lg bg-red-50 p-3 text-sm text-red-700"
+              >
+                This action can't be undone.
+              </p>
+
+              <template v-if="['shipped', 'processing', 'ready_to_ship'].includes(form.status)">
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700"> Shipping provider </span>
+
+                 <v-select
+  v-model="form.provider"
+  :items="COURIERS"
+  placeholder="Select shipping provider"
+  variant="outlined"
+  density="comfortable"
+  color="deep-purple"
+  hide-details
+  clearable
+  class="dialog-v-select"
+/>
+                </label>
+
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700"> Tracking URL (optional) </span>
+
+                  <input
+                    v-model="form.trackingUrl"
+                    type="url"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                  />
+                </label>
+
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">
+                    Estimated delivery (optional)
+                  </span>
+
+                  <v-menu
+  :close-on-content-click="false"
+  location="bottom"
+  min-width="320"
 >
-  <div class="overflow-hidden rounded-2xl bg-white shadow-2xl">
+  <template #activator="{ props }">
+    <v-text-field
+      v-bind="props"
+      :model-value="form.eta ? fmtDate(form.eta) : ''"
+      label="Estimated delivery"
+      placeholder="Select delivery date"
+      prepend-inner-icon="mdi-calendar"
+      variant="outlined"
+      density="comfortable"
+      color="deep-purple"
+      readonly
+      clearable
+      hide-details
+      @click:clear="form.eta = ''"
+    />
+  </template>
 
-    <!-- Header -->
-    <div class="border-b border-slate-100 px-6 py-5">
-      <h3 class="text-xl font-bold text-slate-900">
-        {{ dlgTitle }}
-      </h3>
+  <v-date-picker
+    v-model="form.eta"
+    color="deep-purple"
+    hide-header
+    show-adjacent-months
+  />
+</v-menu>
+                </label>
 
-      <p class="mt-1 text-sm text-slate-500">
-        <template v-if="dlg === 'status'">
-          Update the status of this order.
-        </template>
-        <template v-else-if="dlg === 'payment'">
-          Record a payment for this order.
-        </template>
-        <template v-else-if="dlg === 'refund'">
-          Process a refund for this order.
-        </template>
-        <template v-else>
-          Update the order information.
-        </template>
-      </p>
-    </div>
+                <label class="block space-y-2">
+                  <span class="text-sm font-medium text-slate-700">
+                    Tracking number (optional)
+                  </span>
 
-    <!-- Body -->
-    <div class="max-h-[65vh] space-y-5 overflow-y-auto px-6 py-5">
+                  <input
+                    v-model="form.tracking"
+                    class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                  />
+                </label>
+              </template>
 
-      <!-- STATUS -->
-      <template v-if="dlg === 'status'">
+              <label
+                v-if="isClosing && d?.flags.stock_held"
+                class="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700"
+              >
+                <input
+                  v-model="form.restock"
+                  type="checkbox"
+                  class="h-4 w-4 rounded accent-violet-600"
+                />
 
-        <p
-          v-if="form.status === 'cancelled'"
-          class="rounded-lg bg-red-50 p-3 text-sm text-red-700"
-        >
-          This action can't be undone.
-        </p>
+                Return reserved items to stock
+              </label>
 
-        <template
-          v-if="['shipped', 'processing', 'ready_to_ship'].includes(form.status)"
-        >
-          <label class="block space-y-2">
-            <span class="text-sm font-medium text-slate-700">
-              Shipping provider
-            </span>
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Note (optional) </span>
 
-            <input
-              v-model="form.provider"
-              list="couriers"
-              class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-            />
+                <input
+                  v-model="form.note"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+            </template>
 
-            <datalist id="couriers">
-              <option
-                v-for="c in COURIERS"
-                :key="c"
-                :value="c"
-              />
-            </datalist>
-          </label>
+            <!-- PAYMENT -->
+            <template v-else-if="dlg === 'payment'">
+              <p class="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
+                Confirms the full {{ money(o?.total_kobo, cur) }} was received.
+              </p>
 
-          <label class="block space-y-2">
-            <span class="text-sm font-medium text-slate-700">
-              Tracking URL (optional)
-            </span>
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Method </span>
 
-            <input
-              v-model="form.trackingUrl"
-              type="url"
-              class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-            />
-          </label>
+                <v-select
+  v-model="form.payType"
+  :items="PAY_TYPES"
+  item-title="title"
+  item-value="value"
+  label="Payment method"
+  variant="outlined"
+  density="comfortable"
+  color="deep-purple"
+  hide-details
+  class="dialog-v-select"
+/>
+              </label>
 
-          <label class="block space-y-2">
-            <span class="text-sm font-medium text-slate-700">
-              Estimated delivery (optional)
-            </span>
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Payment reference </span>
 
-            <input
-              v-model="form.eta"
-              type="date"
-              class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-            />
-          </label>
+                <input
+                  v-model="form.reference"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
 
-          <label class="block space-y-2">
-            <span class="text-sm font-medium text-slate-700">
-              Tracking number (optional)
-            </span>
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Note (optional) </span>
 
-            <input
-              v-model="form.tracking"
-              class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-            />
-          </label>
-        </template>
+                <input
+                  v-model="form.note"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+            </template>
 
-        <label
-          v-if="isClosing && d?.flags.stock_held"
-          class="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700"
-        >
-          <input
-            v-model="form.restock"
-            type="checkbox"
-            class="h-4 w-4 rounded accent-violet-600"
-          />
+            <!-- REFUND -->
+            <template v-else-if="dlg === 'refund'">
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700">
+                  Amount in {{ cur }} (leave blank for the full {{ money(o?.total_kobo, cur) }})
+                </span>
 
-          Return reserved items to stock
-        </label>
+                <input
+                  v-model="form.amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
 
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Note (optional)
-          </span>
+              <p class="rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-800">
+                A partial refund is logged on the timeline and the order stays open. A full refund
+                closes it.
+              </p>
 
-          <input
-            v-model="form.note"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-      </template>
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Reason </span>
 
-      <!-- PAYMENT -->
-      <template v-else-if="dlg === 'payment'">
+                <input
+                  v-model="form.reason"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
 
-        <p class="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
-          Confirms the full {{ naira(o?.total_kobo) }} was received.
-        </p>
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700">
+                  Refund reference (optional)
+                </span>
 
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Method
-          </span>
+                <input
+                  v-model="form.reference"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
 
-          <select
-            v-model="form.payType"
-            class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+              <label
+                v-if="d?.flags.stock_held"
+                class="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700"
+              >
+                <input
+                  v-model="form.restock"
+                  type="checkbox"
+                  class="h-4 w-4 rounded accent-violet-600"
+                />
+
+                Return reserved items to stock (full refund)
+              </label>
+            </template>
+
+            <!-- ADDRESS -->
+            <template v-else-if="dlg === 'address'">
+              <label v-for="[k, label] in ADDR_FIELDS" :key="k" class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700">
+                  {{ label }}
+                </span>
+
+                <input
+                  v-model="form.addr[k]"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+            </template>
+
+            <!-- SHIPPING -->
+            <template v-else-if="dlg === 'shipping'">
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Shipping provider </span>
+
+                <v-select
+  v-model="form.provider"
+  :items="COURIERS"
+  placeholder="Select shipping provider"
+  variant="outlined"
+  density="comfortable"
+  color="deep-purple"
+  hide-details
+  clearable
+  class="dialog-v-select"
+/>
+              </label>
+
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Tracking number </span>
+
+                <input
+                  v-model="form.tracking"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700">
+                  Courier tracking URL (optional)
+                </span>
+
+                <input
+                  v-model="form.trackingUrl"
+                  type="url"
+                  placeholder="https://courier-website.com/track/..."
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+
+              <!-- CUSTOMER TRACKING URL -->
+              <div class="space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Customer tracking page URL </span>
+
+                <div class="flex items-center gap-2">
+                  <input
+                    :value="o?.tracking_page_url || ''"
+                    readonly
+                    placeholder="Generated automatically"
+                    class="w-full min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600"
+                  />
+
+                  <button
+                    v-if="o?.tracking_page_url"
+                    type="button"
+                    class="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    @click="copyTrackingPageUrl"
+                  >
+                    <UiIcon name="copy" />
+                  </button>
+                </div>
+
+                <p class="text-xs text-slate-500">
+                  Automatically generated for this order. Share this link with the customer.
+                </p>
+              </div>
+            </template>
+
+            <!-- CONTACT -->
+            <template v-else-if="dlg === 'contact'">
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Email </span>
+
+                <input
+                  v-model="form.email"
+                  type="email"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Phone </span>
+
+                <input
+                  v-model="form.phone"
+                  class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+            </template>
+
+            <!-- NOTES -->
+            <template v-else-if="dlg === 'notes'">
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Customer note </span>
+
+                <textarea
+                  v-model="form.customer"
+                  rows="3"
+                  class="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+
+              <label class="block space-y-2">
+                <span class="text-sm font-medium text-slate-700"> Internal note </span>
+
+                <textarea
+                  v-model="form.internal"
+                  rows="3"
+                  class="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                />
+              </label>
+            </template>
+          </div>
+
+          <!-- Footer -->
+          <div
+            class="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4"
           >
-            <option
-              v-for="p in PAY_TYPES"
-              :key="p.value"
-              :value="p.value"
+            <button
+              type="button"
+              :disabled="saving"
+              @click="dlg = ''"
+              class="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {{ p.title }}
-            </option>
-          </select>
-        </label>
+              Close
+            </button>
 
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Payment reference
-          </span>
-
-          <input
-            v-model="form.reference"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Note (optional)
-          </span>
-
-          <input
-            v-model="form.note"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-      </template>
-
-      <!-- REFUND -->
-      <template v-else-if="dlg === 'refund'">
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Amount in ₦ (leave blank for the full {{ naira(o?.total_kobo) }})
-          </span>
-
-          <input
-            v-model="form.amount"
-            type="number"
-            min="0"
-            step="0.01"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <p class="rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-800">
-          A partial refund is logged on the timeline and the order stays open.
-          A full refund closes it.
-        </p>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Reason
-          </span>
-
-          <input
-            v-model="form.reason"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Refund reference (optional)
-          </span>
-
-          <input
-            v-model="form.reference"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <label
-          v-if="d?.flags.stock_held"
-          class="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700"
-        >
-          <input
-            v-model="form.restock"
-            type="checkbox"
-            class="h-4 w-4 rounded accent-violet-600"
-          />
-
-          Return reserved items to stock (full refund)
-        </label>
-      </template>
-
-      <!-- ADDRESS -->
-      <template v-else-if="dlg === 'address'">
-        <label
-          v-for="[k, label] in ADDR_FIELDS"
-          :key="k"
-          class="block space-y-2"
-        >
-          <span class="text-sm font-medium text-slate-700">
-            {{ label }}
-          </span>
-
-          <input
-            v-model="form.addr[k]"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-      </template>
-
-      <!-- SHIPPING -->
-      <template v-else-if="dlg === 'shipping'">
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Shipping provider
-          </span>
-
-          <input
-            v-model="form.provider"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Tracking number
-          </span>
-
-          <input
-            v-model="form.tracking"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-      </template>
-
-      <!-- CONTACT -->
-      <template v-else-if="dlg === 'contact'">
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Email
-          </span>
-
-          <input
-            v-model="form.email"
-            type="email"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Phone
-          </span>
-
-          <input
-            v-model="form.phone"
-            class="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-      </template>
-
-      <!-- NOTES -->
-      <template v-else-if="dlg === 'notes'">
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Customer note
-          </span>
-
-          <textarea
-            v-model="form.customer"
-            rows="3"
-            class="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-
-        <label class="block space-y-2">
-          <span class="text-sm font-medium text-slate-700">
-            Internal note
-          </span>
-
-          <textarea
-            v-model="form.internal"
-            rows="3"
-            class="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
-      </template>
-    </div>
-
-    <!-- Footer -->
-    <div class="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
-
-      <button
-        type="button"
-        :disabled="saving"
-        @click="dlg = ''"
-        class="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Close
-      </button>
-
-      <button
-        type="button"
-        :disabled="saving || !canSubmit"
-        @click="submit"
-        :class="[
-          'rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50',
-          danger
-            ? 'bg-red-600 hover:bg-red-700'
-            : 'bg-violet-700 hover:bg-violet-800'
-        ]"
-      >
-        {{
-          saving
-            ? 'Saving...'
-            : dlg === 'payment'
-              ? 'Record payment'
-              : dlg === 'refund'
-                ? 'Refund'
-                : dlg === 'status'
-                  ? 'Confirm'
-                  : 'Save changes'
-        }}
-      </button>
-    </div>
-
-  </div>
-</v-dialog>
-
+            <button
+              type="button"
+              :disabled="saving || !canSubmit"
+              @click="submit"
+              :class="[
+                'rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50',
+                danger ? 'bg-red-600 hover:bg-red-700' : 'bg-violet-700 hover:bg-violet-800'
+              ]"
+            >
+              {{
+                saving
+                  ? 'Saving...'
+                  : dlg === 'payment'
+                    ? 'Record payment'
+                    : dlg === 'refund'
+                      ? 'Refund'
+                      : dlg === 'status'
+                        ? 'Confirm'
+                        : 'Save changes'
+              }}
+            </button>
+          </div>
+        </div>
+      </v-dialog>
 
       <Transition name="fade">
         <div
@@ -1002,3 +1107,18 @@ const addrLines = computed(() => {
     </div>
   </MainLayout>
 </template>
+
+<style scoped>
+  .dialog-v-select {
+  width: 100%;
+}
+
+.dialog-v-select :deep(.v-field),
+.dialog-v-select :deep(.v-field__outline) {
+  border-radius: 10px;
+}
+
+.dialog-v-select :deep(.v-field__input) {
+  font-size: 14px;
+}
+</style>

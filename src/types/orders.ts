@@ -41,6 +41,7 @@ export interface OrderListParams extends Partial<OrderFilters> {
   min_total?: number
   max_total?: number
     delivery_method?: 'delivery' | 'pickup'
+    currency?: string
 }
 
 export interface OrderListItem {
@@ -134,7 +135,6 @@ export interface OrderFull {
   billing_address: Address
   customer_note: string | null
   internal_note: string | null
-  tracking_number: string | null
   shipping_provider: string | null
   placed_at: string
   updated_at: string
@@ -145,7 +145,10 @@ export interface OrderFull {
 shipped_at: string | null
 delivered_at: string | null
 estimated_delivery_date: string | null
-tracking_url: string | null
+tracking_token?: string | null
+tracking_page_url?: string | null
+tracking_number?: string | null
+tracking_url?: string | null
 }
 
 export interface OrderDetail {
