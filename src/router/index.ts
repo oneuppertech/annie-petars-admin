@@ -40,6 +40,11 @@ const router = createRouter({
       path: '/messages',
       component: () => import('@/views/admin/Messages.vue'),
       meta: { requiresAdmin: true }
+    },
+    {
+      path: '/admin/users',
+      component: () => import('@/views/admin/UserManagement.vue'),
+      meta: { requiresAdmin: true }
     }
   ],
   scrollBehavior(to, from, savedPosition) {

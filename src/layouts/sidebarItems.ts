@@ -6,34 +6,41 @@ const sidebarItems = [
         nav: 'overview',
         label: 'Dashboard',
         icon: 'mdi mdi-view-dashboard-outline',
-        to: '/admin/dashboard',
+        to: '/admin/dashboard'
       },
       {
         nav: 'overview',
         label: 'Inventory',
         icon: 'mdi mdi-cube-scan',
-        to: '/admin/inventory',
+        to: '/admin/inventory'
       },
       {
         nav: 'overview',
         label: 'Orders',
         icon: 'mdi mdi-cart-check',
-        to: '/admin/orders',
+        to: '/admin/orders'
       },
       {
         nav: 'overview',
         label: 'Custom Requests',
-       icon: 'mdi mdi-clipboard-edit-outline',
-        to: '/custom-requests',
+        icon: 'mdi mdi-clipboard-edit-outline',
+        to: '/custom-requests'
       },
       {
-  nav: 'overview',
-  label: 'Messages',
-  icon: 'mdi mdi-message-text-outline',
-  to: '/messages',
-}
-    ],
-  },
+        nav: 'overview',
+        label: 'Messages',
+        icon: 'mdi mdi-message-text-outline',
+        to: '/messages'
+      },
+      {
+        nav: 'overview',
+        label: 'User Management',
+        icon: 'mdi mdi-account-group-outline',
+        to: '/admin/users',
+        roles: ['owner', 'admin']
+      }
+    ]
+  }
 ]
 
 export default sidebarItems
