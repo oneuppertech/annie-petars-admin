@@ -288,8 +288,8 @@ onMounted(load)
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-for="m in filtered" :key="m.user_id">
+            <tbody class="mt-4">
+              <tr v-for="m in filtered" class="mt-4" :key="m.user_id">
                 <td>
                   <div class="identity">
                     <span class="avatar">{{ initials(m) }}</span>
@@ -299,10 +299,18 @@ onMounted(load)
                     </div>
                   </div>
                 </td>
-                <span class="role-badge" :class="`role-${m.role}`">
-                  <span class="role-dot"></span>
-                  {{ roleLabels[m.role] || m.role }}
-                </span>
+               <td>
+  <span class="role-badge" :class="`role-${m.role}`">
+    <span class="role-dot"></span>
+    {{ roleLabels[m.role] || m.role }}
+  </span>
+</td>
+
+<td>
+  <span class="pill" :class="m.status.toLowerCase()">
+    {{ m.status }}
+  </span>
+</td>
                 <td>
                   {{ m.last_sign_in_at ? new Date(m.last_sign_in_at).toLocaleString() : 'Never' }}
                 </td>
