@@ -68,31 +68,6 @@ const REQUEST_COLS =
   'id,request_number,customer_id,name,email,phone,country,outfit_type,garment_type,needed_by,event_date,quantity,status,quote_kobo,agreed_timeline,created_at,updated_at'
 
 /* ---------- helpers ---------- */
-async function resolveCurrency(db: DB, wanted: string | null) {
-  const [orders, prods] = await Promise.all([
-    db
-      .from('orders')
-      .select('currency,total_kobo')
-      .eq('payment_status', 'paid')
-      .not('status', 'in', '(cancelled,refunded)')
-      .limit(10000),
-    db.from('products').select('currency')
-  ])
-  check(orders.error)
-  check(prods.error)
-
-  const totals = new Map<string, number>()
-  for (const o of orders.data || [])
-    totals.set(o.currency, (totals.get(o.currency) || 0) + Number(o.total_kobo))
-  for (const p of prods.data || []) if (!totals.has(p.currency)) totals.set(p.currency, 0)
-
-  const list = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c as string)
-  const w = (wanted || '').toUpperCase()
-  return {
-    currency: list.includes(w) ? w : list[0] || 'NGN',
-    currencies: list.length ? list : ['NGN']
-  }
-}
 const uid = (v: unknown) => {
   if (typeof v !== 'string' || !UUID.test(v)) throw new HttpError(400, 'Invalid id')
   return v
@@ -174,11 +149,10 @@ async function count(q: Row) {
 }
 
 /* ---------- sales ---------- */
-async function salesSummary(db: DB, fromIso: string, toIso: string, cur: string) {
+async function salesSummary(db: DB, fromIso: string, toIso: string) {
   const { data, error } = await db
     .from('orders')
     .select('total_kobo,placed_at')
-    .eq('currency', cur)
     .eq('payment_status', 'paid')
     .not('status', 'in', '(cancelled,refunded)')
     .gte('placed_at', fromIso)
@@ -217,13 +191,12 @@ async function salesSummary(db: DB, fromIso: string, toIso: string, cur: string)
   }
 }
 
-async function topProducts(db: DB, fromIso: string, cur: string, limit = 5) {
+async function topProducts(db: DB, fromIso: string, limit = 5) {
   const { data, error } = await db
     .from('order_items')
     .select(
-      'product_id,product_name,quantity,line_total_kobo,orders!inner(payment_status,status,placed_at,currency)'
+      'product_id,product_name,quantity,line_total_kobo,orders!inner(payment_status,status,placed_at)'
     )
-    .eq('orders.currency', cur)
     .eq('orders.payment_status', 'paid')
     .not('orders.status', 'in', '(cancelled,refunded)')
     .gte('orders.placed_at', fromIso)
@@ -249,7 +222,6 @@ async function topProducts(db: DB, fromIso: string, cur: string, limit = 5) {
 }
 
 async function sales(db: DB, sp: URLSearchParams) {
-  const { currency, currencies } = await resolveCurrency(db, sp.get('currency'))
   const now = Date.now()
   const to = dateParam(sp.get('to'), 'To date', true) ?? new Date(now).toISOString()
   const from =
@@ -257,15 +229,12 @@ async function sales(db: DB, sp: URLSearchParams) {
     new Date(startOfLagosDay(Date.parse(to)) - 29 * DAY).toISOString()
   if (Date.parse(to) - Date.parse(from) > 366 * DAY) throw new HttpError(400, 'Range is too large')
   if (Date.parse(from) > Date.parse(to)) throw new HttpError(400, 'From must be before To')
-  const [summary, top] = await Promise.all([
-    salesSummary(db, from, to, currency),
-    topProducts(db, from, currency, 10)
-  ])
-  return { currency, currencies, from, to, ...summary, top_products: top }
+  const [summary, top] = await Promise.all([salesSummary(db, from, to), topProducts(db, from, 10)])
+  return { from, to, ...summary, top_products: top }
 }
 
 /* ---------- overview ---------- */
-async function overview(db: DB, role: string, wanted: string | null) {
+async function overview(db: DB, role: string) {
   const out: Obj = { role, generated_at: new Date().toISOString() }
   const tasks: Promise<unknown>[] = []
 
@@ -297,17 +266,14 @@ async function overview(db: DB, role: string, wanted: string | null) {
   if (can(role, 'sales'))
     tasks.push(
       (async () => {
-        const { currency, currencies } = await resolveCurrency(db, wanted)
         const now = Date.now()
         const from = new Date(startOfLagosDay(now) - 29 * DAY).toISOString()
         const [s, top] = await Promise.all([
-          salesSummary(db, from, new Date(now).toISOString(), currency),
-          topProducts(db, from, currency)
+          salesSummary(db, from, new Date(now).toISOString()),
+          topProducts(db, from)
         ])
-        out.currency = currency
-        out.currencies = currencies
-         const last7 = s.series.slice(-7)
-        out.sales = { 
+        const last7 = s.series.slice(-7)
+        out.sales = {
           today: s.series[s.series.length - 1],
           last_7_days: {
             revenue_kobo: last7.reduce((n, d) => n + d.revenue_kobo, 0),
@@ -1010,7 +976,7 @@ Deno.serve(
       const sp = new URL(req.url).searchParams
       switch (sp.get('resource') || 'overview') {
         case 'overview':
-  return ok(await overview(db, role, sp.get('currency')))
+          return ok(await overview(db, role))
         case 'sales':
           need(role, 'sales')
           return ok(await sales(db, sp))
