@@ -1,0 +1,18 @@
+/* Shared styles for the events + tickets flow (global so teleported dialogs pick them up) */
+.q-btn-primary { background:#2b7fff !important; color:#fff !important; border-radius:10px !important; font-weight:600; text-transform:none !important; letter-spacing:0 !important; }
+.q-btn-primary.v-btn--disabled { background:#a9cbff !important; color:#fff !important; opacity:1 !important; }
+.q-btn-ghost { background:#eaf2ff !important; color:#2b7fff !important; border-radius:10px !important; font-weight:600; text-transform:none !important; letter-spacing:0 !important; box-shadow:none !important; }
+.q-title { font-family:inherit; font-weight:800; font-size:28px; color:#111827; }
+.q-section-title { font-weight:700; font-size:18px; color:#111827; }
+.q-help { color:#6b7280; font-size:13px; }
+.q-label { font-size:13px; color:#4b5563; margin-bottom:6px; display:block; }
+.q-label.q-req::before { content:'* '; color:#dc2626; }
+.q-error { color:#dc2626; font-size:12px; margin-top:4px; }
+.q-soft { background:#f8f9fa; border-radius:14px; }
+.q-info { background:#eaf2ff; color:#2b3e50; border-radius:10px; padding:12px 16px; font-size:14px; }
+.q-chip { border:1px solid #d1d5db; border-radius:8px; padding:5px 12px; font-size:13px; cursor:pointer; background:#fff; color:#2b3e50; transition:all .12s ease; }
+.q-chip:hover { border-color:#2b7fff; }
+.q-chip--on { border-color:#2b7fff; background:#eaf2ff; color:#2b7fff; font-weight:600; }
+.q-dropzone { border:1.5px dashed #c7d2e0; border-radius:14px; background:#f8f9fa; min-height:96px; display:flex; align-items:center; justify-content:center; gap:10px; cursor:pointer; color:#4b5563; font-size:14px; transition:all .12s ease; }
+.q-dropzone:hover, .q-dropzone--active { border-color:#2b7fff; background:#eef5ff; }
+.q-link { color:#2b7fff; cursor:pointer; font-weight:600; background:none; border:0; padding:0; font:inherit; }
