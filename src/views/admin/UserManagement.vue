@@ -42,7 +42,7 @@ const labels: Record<string, string> = {
   order_manager: 'Order Manager',
   support: 'Support'
 }
-const statuses = ['Active', 'Unconfirmed', 'Suspended']
+const statuses = ['Active', 'Suspended']
 const emptyForm = (): AccountForm => ({
   full_name: '',
   email: '',

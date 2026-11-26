@@ -12,6 +12,7 @@ const router = useRouter()
 const loggingOut = ref(false)
 const logoutError = ref('')
 
+
 const userRole = computed(
   () => authStore.role?.toLowerCase() || null
 )
@@ -20,10 +21,20 @@ const hasAdminAccess = computed(
   () => authStore.isAdmin
 )
 
-const visibleSidebarItems = computed(() =>
-  hasAdminAccess.value ? sidebarItems : []
-)
+const visibleSidebarItems = computed(() => {
+  if (!hasAdminAccess.value || !userRole.value) {
+    return []
+  }
 
+  return sidebarItems
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item =>
+        item.roles?.includes(userRole.value)
+      )
+    }))
+    .filter(group => group.items.length > 0)
+})
 // User information
 const userEmail = computed(
   () => authStore.user?.email || ''
@@ -70,7 +81,7 @@ async function handleLogout() {
 
     emit('navigate')
 
-    await router.replace('/admin/login')
+    await router.replace('/')
   } catch (error) {
     console.error('Logout failed:', error)
 

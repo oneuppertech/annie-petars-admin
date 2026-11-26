@@ -10,9 +10,9 @@ const ADMIN_ROLES = [
   'owner',
   'admin',
   'catalog_manager',
-  'order_manager'
+  'order_manager',
+  'support'
 ]
-
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<any>(null)
   const role = ref<string | null>(null)

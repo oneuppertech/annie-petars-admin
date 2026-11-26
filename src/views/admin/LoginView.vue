@@ -27,12 +27,10 @@ async function submit() {
 <template>
   <main class="flex min-h-screen items-center justify-center bg-[#FFF7F1] px-5 text-[#2A1B16]">
     <form class="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm" @submit.prevent="submit">
-      <div class="mb-8 text-center">
-        <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#FFE6D6] text-sm font-semibold">AP</span>
-        <h1 class="mt-4 text-xl font-semibold">Admin sign in</h1>
-        <p class="mt-1 text-sm text-[#5A413A]">AnniePetars inventory</p>
+      <div class="mb-8 text-center flex justify-center">
+        <img src="@/assets/annie-peters-logo.png" class="w-20">
       </div>
-
+      
       <label class="mb-1 block text-xs font-medium text-[#5A413A]" for="email">Email</label>
       <input id="email" v-model="email" type="email" required autocomplete="username"
         class="mb-4 w-full rounded-lg border border-black/15 px-3 py-2.5 text-sm outline-none transition focus:border-[#E2784A]" />
