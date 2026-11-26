@@ -1,18 +1,8 @@
-
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import {
-  supabase,
-  initializeSupabaseAuth,
-  getCurrentSession
-} from '@/services/supabase'
-const ADMIN_ROLES = [
-  'owner',
-  'admin',
-  'catalog_manager',
-  'order_manager',
-  'support'
-]
+import { ref, computed, watch } from 'vue'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+import { supabase, initializeSupabaseAuth, getCurrentSession } from '@/services/supabase'
+const ADMIN_ROLES = ['owner', 'admin', 'catalog_manager', 'order_manager', 'support']
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<any>(null)
   const role = ref<string | null>(null)
@@ -21,14 +11,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   let initPromise: Promise<void> | null = null
   let authSubscription: { unsubscribe: () => void } | null = null
+  let roleChannel: RealtimeChannel | null = null
+  let subscribedUserId: string | null = null
 
   const user = computed(() => session.value?.user ?? null)
 
   const token = computed(() => session.value?.access_token ?? null)
 
-  const isAdmin = computed(
-    () => !!user.value && ADMIN_ROLES.includes(role.value ?? '')
-  )
+  const isAdmin = computed(() => !!user.value && ADMIN_ROLES.includes(role.value ?? ''))
 
   async function fetchRole() {
     const currentUserId = user.value?.id
@@ -68,30 +58,24 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       if (!authSubscription) {
-        const { data: listener } = supabase.auth.onAuthStateChange(
-          (event, newSession) => {
-            const previousUserId = session.value?.user?.id
-            const nextUserId = newSession?.user?.id
+        const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+          const previousUserId = session.value?.user?.id
+          const nextUserId = newSession?.user?.id
 
-            session.value = newSession
+          session.value = newSession
 
-            if (!newSession) {
-              role.value = null
-              return
-            }
-
-            // Refresh the role only when identity changes or a user signs in.
-            if (
-              event === 'SIGNED_IN' ||
-              event === 'USER_UPDATED' ||
-              previousUserId !== nextUserId
-            ) {
-              setTimeout(() => {
-                void fetchRole().catch(console.error)
-              }, 0)
-            }
+          if (!newSession) {
+            role.value = null
+            return
           }
-        )
+
+          // Refresh the role only when identity changes or a user signs in.
+          if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || previousUserId !== nextUserId) {
+            setTimeout(() => {
+              void fetchRole().catch(console.error)
+            }, 0)
+          }
+        })
 
         authSubscription = listener.subscription
       }
@@ -117,9 +101,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (error) {
         throw new Error(
-          /invalid login/i.test(error.message)
-            ? 'Incorrect email or password'
-            : error.message
+          /invalid login/i.test(error.message) ? 'Incorrect email or password' : error.message
         )
       }
 
@@ -137,16 +119,105 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
-    const { error } = await supabase.auth.signOut()
+  const { error } = await supabase.auth.signOut()
 
-    if (error) {
-      console.error('Logout failed:', error)
-      throw error
+  if (error) {
+    console.error('Logout failed:', error)
+    throw error
+  }
+
+  await unsubscribeRoleChannel()
+
+  session.value = null
+  role.value = null
+}
+  async function unsubscribeRoleChannel() {
+    const channel = roleChannel
+
+    roleChannel = null
+    subscribedUserId = null
+
+    if (channel) {
+      await supabase.removeChannel(channel)
+    }
+  }
+
+  async function subscribeRoleChannel() {
+    const userId = user.value?.id
+
+    if (!userId) return
+
+    if (roleChannel && subscribedUserId === userId) {
+      return
     }
 
-    session.value = null
-    role.value = null
+    await unsubscribeRoleChannel()
+
+    if (user.value?.id !== userId) return
+
+    subscribedUserId = userId
+
+    roleChannel = supabase
+      .channel(`auth-role-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_roles',
+          filter: `user_id=eq.${userId}`
+        },
+        () => {
+          if (user.value?.id !== userId) return
+
+          void fetchRole().catch(console.error)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'user_roles',
+          filter: `user_id=eq.${userId}`
+        },
+        () => {
+          if (user.value?.id !== userId) return
+
+          void fetchRole().catch(console.error)
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Role subscription connected')
+
+          void fetchRole().catch(console.error)
+        }
+
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Role subscription failed')
+        }
+      })
   }
+
+  watch(
+  () => user.value?.id,
+  (newUserId, previousUserId) => {
+    if (newUserId === previousUserId) return
+
+    role.value = null
+
+    if (newUserId) {
+      void subscribeRoleChannel().catch(console.error)
+    } else {
+      void unsubscribeRoleChannel().catch(console.error)
+    }
+  },
+  {
+    immediate: true,
+    flush: 'sync'
+  }
+)
 
   return {
     session,

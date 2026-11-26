@@ -10,7 +10,7 @@ const names = ref({})
 const review = computed(() => (detail.value ? present(detail.value, names.value) : null))
 const route = useRoute(),
   rows = ref([]),
-  loading = ref(false),
+  loading = ref(true),
   busy = ref(false),
   status = ref(''),
   q = ref(''),
@@ -35,12 +35,19 @@ const colors = {
   rejected: 'danger',
   cancelled: 'info'
 }
+const loadError = ref('')
+
 async function load() {
   loading.value = true
+  loadError.value = ''
+
   try {
-    rows.value = (await inventoryApi.approvals()).requests
+    const res = await inventoryApi.approvals()
+
+    rows.value = res.requests || []
   } catch (e) {
-    ElMessage.error(errMsg(e))
+    loadError.value = errMsg(e)
+    ElMessage.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -80,23 +87,56 @@ async function decide(action) {
     busy.value = false
   }
 }
+async function loadUser() {
+  const { data, error } = await supabase.auth.getUser()
+
+  if (error) throw error
+
+  me.value = data.user?.id || ''
+
+  if (!me.value) return
+
+  const { data: r, error: roleError } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', me.value)
+    .maybeSingle()
+
+  if (roleError) throw roleError
+
+  role.value = r?.role || ''
+}
+
+async function loadCollections() {
+  const c = await inventoryApi.collections()
+
+  names.value = Object.fromEntries(
+    (c.collections || []).map((x) => [x.id, x.name])
+  )
+}
+
 onMounted(async () => {
-  const { data } = await supabase.auth.getUser()
-  me.value = data.user?.id
-  if (me.value) {
-    const { data: r } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', me.value)
-      .maybeSingle()
-    role.value = r?.role
-  }
+  loading.value = true
+
   try {
-    const c = await inventoryApi.collections()
-    names.value = Object.fromEntries((c.collections || []).map((x) => [x.id, x.name]))
-  } catch {}
-  await load()
-  if (route.query.id) show(route.query.id)
+    const results = await Promise.allSettled([
+      loadUser(),
+      loadCollections(),
+      load()
+    ])
+
+    results.forEach((result) => {
+      if (result.status === 'rejected') {
+        console.error(result.reason)
+      }
+    })
+
+    if (route.query.id) {
+      await show(route.query.id)
+    }
+  } finally {
+    loading.value = false
+  }
 })
 watch(
   () => route.query.id,
@@ -123,7 +163,22 @@ watch(
           @click="status = status === s ? '' : s"
         >
           <el-tag :type="colors[s]">{{ s }}</el-tag
-          ><strong>{{ rows.filter((r) => r.status === s).length }}</strong>
+          ><el-skeleton
+  v-if="loading"
+  animated
+  class="mt-3"
+>
+  <template #template>
+    <el-skeleton-item
+      variant="text"
+      style="width: 45px; height: 28px"
+    />
+  </template>
+</el-skeleton>
+
+<strong v-else>
+  {{ rows.filter((r) => r.status === s).length }}
+</strong>
         </button>
       </div>
       <section class="panel">
@@ -137,7 +192,57 @@ watch(
             ><el-option v-for="s in statuses" :key="s" :label="s" :value="s"
           /></el-select>
         </div>
-        <el-table :data="visible" v-loading="loading" @row-click="(r) => show(r.id)"
+     <el-table
+  :data="visible"
+  v-loading="loading"
+  element-loading-text="Loading approval requests..."
+  element-loading-background="rgba(255, 255, 255, 0.95)"
+  @row-click="(r) => show(r.id)"
+>
+  <template #empty>
+    <div v-if="loading" class="min-h-[180px]"></div>
+
+    <div v-else-if="loadError" class="py-10">
+      <v-icon
+        icon="mdi-alert-circle-outline"
+        size="42"
+        color="error"
+      />
+
+      <p class="my-3">{{ loadError }}</p>
+
+      <el-button @click="load">
+        Try again
+      </el-button>
+    </div>
+
+    <div v-else class="py-10">
+      <v-icon
+        icon="mdi-clipboard-text-outline"
+        size="48"
+        color="#b99b8b"
+      />
+
+      <h3 class="font-semibold mt-3">
+        No approval requests found
+      </h3>
+
+      <p class="text-gray-400 text-sm">
+        {{ q || status
+          ? 'Try changing your search or filters.'
+          : 'New approval requests will appear here.'
+        }}
+      </p>
+
+      <el-button
+        v-if="q || status"
+        text
+        @click="q = ''; status = ''"
+      >
+        Clear filters
+      </el-button>
+    </div>
+  </template>
           ><el-table-column label="Request" min-width="240"
             ><template #default="{ row }"
               ><strong>{{ present(row, names).name }}</strong>
